@@ -92,6 +92,7 @@ function App() {
 
     // Add headers to skip browser warnings (Ngrok & LocalTunnel)
     const newSocket = io(serverUrl, {
+      transports: ['websocket'], // Force WebSocket to avoid CORS preflight (OPTIONS) issues with LocalTunnel
       extraHeaders: {
         "ngrok-skip-browser-warning": "true",
         "Bypass-Tunnel-Reminder": "true"
