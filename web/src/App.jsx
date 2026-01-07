@@ -807,10 +807,13 @@ function App() {
                 ))}
                 <div ref={logEndRef} />
               </div>
-            </div >
-          </div >
-        </div >
-        );
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div >
+  );
 }
 
-        export default App;
+export default App;
