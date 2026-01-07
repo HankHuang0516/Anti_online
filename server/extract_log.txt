@@ -1,0 +1,12 @@
+Starting Targeted Extraction...
+Capturing region: {"left":1350,"top":650,"width":300,"height":200}
+Error: Error: Error: Given width exceeds display dimensions
+Starting Targeted Extraction...
+Capturing region: {"left":1350,"top":660,"width":180,"height":100}
+Saved debug_target_area.png (physical matching extraction)
+No button color found in target region. Saving raw capture as fallback?
+Starting Targeted Extraction...
+Capturing region: {"left":1350,"top":660,"width":180,"height":100}
+Saved debug_target_area.png (physical matching extraction)
+No button color found. Performing BLIND CROP at user coordinates.
+Saved assets/final_template.png (Force Crop)
