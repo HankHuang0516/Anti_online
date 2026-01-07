@@ -28,6 +28,7 @@ function App() {
   const [dialogCoords, setDialogCoords] = useState(savedSettings?.dialogCoords || null);
   const [settingMode, setSettingMode] = useState(null); // 'dialog', 'terminal-id', null
   const [terminals, setTerminals] = useState(savedSettings?.terminals || []);
+  const [textItems, setTextItems] = useState(savedSettings?.textItems || []); // [{id, text, position: 'prepend'|'append', enabled: true}]
   const [mouseMode, setMouseMode] = useState('off');
   const [autoAccept, setAutoAccept] = useState(false);
   const [dpiScale, setDpiScale] = useState(savedSettings?.dpiScale || 1.25);
@@ -48,13 +49,40 @@ function App() {
     const settings = {
       dialogCoords,
       terminals,
+      textItems,
       dpiScale,
       offsetX,
       offsetY,
       currentScreen
     };
     localStorage.setItem('anti_online_settings', JSON.stringify(settings));
-  }, [dialogCoords, terminals, dpiScale, offsetX, offsetY, currentScreen]);
+  }, [dialogCoords, terminals, textItems, dpiScale, offsetX, offsetY, currentScreen]);
+
+  // Text Item Handlers
+  const addTextItem = () => {
+    setTextItems(prev => [...prev, {
+      id: Date.now().toString(),
+      text: '',
+      position: 'prepend',
+      enabled: true
+    }]);
+  };
+
+  const updateTextItem = (id, field, value) => {
+    setTextItems(prev => prev.map(item =>
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const toggleTextItem = (id) => {
+    setTextItems(prev => prev.map(item =>
+      item.id === id ? { ...item, enabled: !item.enabled } : item
+    ));
+  };
+
+  const removeTextItem = (id) => {
+    setTextItems(prev => prev.filter(item => item.id !== id));
+  };
 
   // Initialize socket when server URL changes
   useEffect(() => {
@@ -253,12 +281,30 @@ function App() {
 
   const handleSendInput = (e) => {
     e.preventDefault();
-    if (socket && inputText.trim() && dialogCoords) {
-      socket.emit('command', { type: 'INPUT_TEXT', text: inputText, dialogX: dialogCoords.x, dialogY: dialogCoords.y });
-      addLog('User', `Sent input: "${inputText}"`);
-      setInputText('');
-    } else if (!dialogCoords) {
+    if (!socket) return;
+    if (!dialogCoords) {
       addLog('Error', 'Dialog position not set. Cannot send input.');
+      return;
+    }
+
+    // construct final text
+    const prepends = textItems.filter(i => i.enabled && i.position === 'prepend').map(i => i.text);
+    const appends = textItems.filter(i => i.enabled && i.position === 'append').map(i => i.text);
+
+    // Combine: Prepends + input + Appends
+    // Filter out empty strings to avoid extra newlines if not needed
+    const combinedParts = [
+      ...prepends,
+      inputText,
+      ...appends
+    ].filter(t => t.trim().length > 0);
+
+    const finalText = combinedParts.join('\n');
+
+    if (finalText.trim()) {
+      socket.emit('command', { type: 'INPUT_TEXT', text: finalText, dialogX: dialogCoords.x, dialogY: dialogCoords.y });
+      addLog('User', `Sent input (${combinedParts.length} parts)`);
+      setInputText(''); // Clear main input only
     }
   };
 
@@ -649,37 +695,93 @@ function App() {
               </div>
             </div>
 
-            {/* Remote Input */}
+            {/* Remote Input with Enhanced Text Items */}
             <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700 backdrop-blur-sm">
               <h2 className="text-lg font-semibold mb-3 text-slate-300">Remote Input</h2>
-              <form onSubmit={handleSendInput} className="flex gap-2 items-end">
-                <textarea
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendInput(e);
-                    }
-                  }}
-                  placeholder="Type command... (Enter to send, Shift+Enter for new line)"
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y min-h-[80px]"
-                />
+              <form onSubmit={handleSendInput} className="space-y-4">
+                <div className="relative">
+                  <textarea
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="Type text here..."
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none text-base"
+                  // Removed onKeyDown to disable Enter sending
+                  />
+                  <div className="absolute right-2 bottom-2 text-xs text-slate-500 pointer-events-none">
+                    Enter key only adds new line
+                  </div>
+                </div>
+
+                {/* Text Items Implementation */}
+                <div className="space-y-3 pt-2 border-t border-slate-700/50">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Extra Text Items</label>
+                    <button
+                      type="button"
+                      onClick={addTextItem}
+                      className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-slate-200 transition-colors"
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+
+                  {textItems.length === 0 && <div className="text-xs text-slate-500 text-center py-2 italic opacity-50">No extra items added</div>}
+
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+                    {textItems.map(item => (
+                      <div key={item.id} className={`flex gap-2 items-center bg-slate-900/50 p-2 rounded-lg border ${item.enabled ? 'border-slate-600' : 'border-slate-800 opacity-60'}`}>
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={() => toggleTextItem(item.id)}
+                          className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                        />
+                        <select
+                          value={item.position}
+                          onChange={(e) => updateTextItem(item.id, 'position', e.target.value)}
+                          className="bg-slate-800 text-xs border border-slate-700 rounded px-1 py-1.5 text-slate-300 outline-none w-[75px]"
+                        >
+                          <option value="prepend">Prepend</option>
+                          <option value="append">Append</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={item.text}
+                          onChange={(e) => updateTextItem(item.id, 'text', e.target.value)}
+                          placeholder="Content..."
+                          className="flex-1 bg-transparent border-b border-slate-700 text-sm py-1 px-1 focus:border-blue-500 focus:outline-none text-slate-200 placeholder-slate-600"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeTextItem(item.id)}
+                          className="text-slate-500 hover:text-red-400 p-1"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   type="submit"
-                  disabled={!dialogCoords}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm ${dialogCoords ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-slate-700 text-slate-500 cursor-not-allowed'}`}
+                  disabled={!socket || (!inputText && !textItems.some(i => i.enabled))}
+                  className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl font-bold text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
                 >
-                  Send
+                  Send Input
                 </button>
               </form>
             </div>
-          </div>
-        </div>
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+        </div >
 
 
-        {/* Logs */}
-        <div className="rounded-2xl bg-black/40 border border-slate-800 overflow-hidden backdrop-blur-md">
+    {/* Logs */ }
+    < div className = "rounded-2xl bg-black/40 border border-slate-800 overflow-hidden backdrop-blur-md" >
           <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
             <span className="text-xs font-mono text-slate-400">TERMINAL OUTPUT</span>
             <span className="text-xs font-mono text-slate-500">{logs.length} events</span>
@@ -699,9 +801,9 @@ function App() {
             ))}
             <div ref={logEndRef} />
           </div>
-        </div>
-      </div>
-    </div>
+        </div >
+      </div >
+    </div >
   );
 }
 
