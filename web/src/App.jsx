@@ -130,9 +130,10 @@ function App() {
     socket.emit('command', { type: 'AUTH', code: accessCode });
   };
 
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+  // Removed auto-scroll to prevent jumping on mobile
+  // useEffect(() => {
+  //   logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // }, [logs]);
 
   // Sync DPI Scale to server
   useEffect(() => {
@@ -533,13 +534,18 @@ function App() {
             {/* Remote Input */}
             <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700 backdrop-blur-sm">
               <h2 className="text-lg font-semibold mb-3 text-slate-300">Remote Input</h2>
-              <form onSubmit={handleSendInput} className="flex gap-2">
-                <input
-                  type="text"
+              <form onSubmit={handleSendInput} className="flex gap-2 items-end">
+                <textarea
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Type command..."
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendInput(e);
+                    }
+                  }}
+                  placeholder="Type command... (Enter to send, Shift+Enter for new line)"
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y min-h-[80px]"
                 />
                 <button
                   type="submit"
