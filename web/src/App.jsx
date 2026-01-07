@@ -263,26 +263,28 @@ function App() {
   };
 
   const SettingsModal = () => (
-    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex flex-col p-4 overflow-y-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white">Settings & Calibration</h2>
+    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex flex-col overflow-hidden">
+      {/* 1. Header (Fixed) */}
+      <div className="flex justify-between items-center px-4 py-3 border-b border-slate-700 bg-slate-900 shadow-md z-10">
+        <h2 className="text-lg font-bold text-white">Settings & Calibration</h2>
         <button
           onClick={() => setShowSettings(false)}
-          className="text-slate-400 hover:text-white p-2"
+          className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors"
         >
           ✕ Close
         </button>
       </div>
 
-      <div className="flex-1 space-y-8 max-w-2xl mx-auto w-full pb-8">
-        {/* Live Stream View for Calibration */}
-        <div className="space-y-2">
-          <div className="text-sm text-slate-400 mb-1 flex justify-between">
-            <span>Live Calibration Preview</span>
-            {isSettingAnything && <span className="text-yellow-500 font-bold animate-pulse">Select position on screen...</span>}
+      {/* 2. Live Preview (Fixed at Top) */}
+      <div className="flex-shrink-0 bg-black/40 p-2 border-b border-slate-700">
+        <div className="space-y-1 max-w-lg mx-auto w-full">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs text-slate-400 font-medium">Live Preview (Tap to Set)</span>
+            {isSettingAnything && <span className="text-yellow-500 text-xs font-bold animate-pulse">Select Target...</span>}
           </div>
+
           <div
-            className={`rounded-xl bg-black border overflow-hidden aspect-video flex items-center justify-center relative cursor-crosshair ${isSettingAnything ? 'border-yellow-500 border-2' : 'border-slate-700'}`}
+            className={`rounded-lg bg-black border overflow-hidden aspect-video flex items-center justify-center relative cursor-crosshair shadow-lg ${isSettingAnything ? 'border-yellow-500 ring-2 ring-yellow-500/30' : 'border-slate-700'}`}
             onClick={handleImageClick}
           >
             {screenImage ? (
@@ -293,150 +295,148 @@ function App() {
                 draggable={false}
               />
             ) : (
-              <div className="text-slate-600">Waiting for stream...</div>
+              <div className="text-slate-600 text-sm">Waiting for stream...</div>
             )}
+            {/* Overlays */}
             {isSettingAnything && (
               <div className="absolute inset-0 bg-yellow-500/10 pointer-events-none flex items-center justify-center">
-                <div className="bg-black/50 px-2 py-1 rounded text-white text-xs">Tap target position</div>
+                <div className="bg-black/80 px-3 py-1.5 rounded-full text-white text-xs backdrop-blur-md border border-white/20 shadow-xl transform scale-105">
+                  Tap position on image
+                </div>
               </div>
             )}
             {dialogCoords && (
-              <div className="absolute bottom-2 left-2 pointer-events-none bg-green-500/80 text-white px-2 py-1 rounded text-xs font-mono">
-                Dialog: ({dialogCoords.x}, {dialogCoords.y})
+              <div className="absolute bottom-1 left-1 pointer-events-none bg-green-500/80 text-white px-1.5 py-0.5 rounded text-[10px] font-mono backdrop-blur-sm">
+                Dialog: {dialogCoords.x},{dialogCoords.y}
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-500 text-center">Use this preview to set positions. Click on the image above when "Set Position" is active.</p>
         </div>
+      </div>
 
-        {/* Dialog Position */}
-        <div className="bg-slate-800 p-4 rounded-xl space-y-3">
-          <h3 className="font-medium text-slate-300 border-b border-slate-700 pb-2">Dialog Calibration</h3>
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-mono text-slate-400">
-              Current: {dialogCoords ? `(${dialogCoords.x}, ${dialogCoords.y})` : 'Not set'}
+      {/* 3. Settings Controls (Scrollable) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 lg:p-6 pb-24">
+        <div className="max-w-xl mx-auto space-y-6">
+
+          {/* Dialog Position Card */}
+          <div className="bg-slate-800 p-4 rounded-xl space-y-3 shadow-sm border border-slate-700/50">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-slate-200">Dialog Box</h3>
+              <div className="text-xs font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded">
+                current: {dialogCoords ? `${dialogCoords.x},${dialogCoords.y}` : '-,-'}
+              </div>
             </div>
             <button
               onClick={() => setSettingMode(settingMode === 'dialog' ? null : 'dialog')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${settingMode === 'dialog' ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+              className={`w-full py-2.5 rounded-lg text-sm font-bold transition-all ${settingMode === 'dialog' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
             >
-              {settingMode === 'dialog' ? 'Cancel' : 'Set Position'}
+              {settingMode === 'dialog' ? 'Cancel Selection' : '🎯 Set Position'}
             </button>
-          </div>
-          <p className="text-xs text-slate-500">The "Accept" button location.</p>
-        </div>
-
-        {/* Terminals Configuration */}
-        <div className="bg-slate-800 p-4 rounded-xl space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-            <h3 className="font-medium text-slate-300">Terminals Config</h3>
-            <button onClick={addTerminal} className="text-xs bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded font-bold text-white shadow-sm">+ Add Terminal</button>
+            <p className="text-xs text-slate-500">Click button then tap the preview image.</p>
           </div>
 
-          <div className="space-y-3">
-            {terminals.length === 0 && <div className="text-center text-slate-500 text-sm">No terminals configured</div>}
-            {terminals.map(t => (
-              <div key={t.id} className="bg-slate-900 p-3 rounded-lg flex flex-col gap-3 border border-slate-700">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-bold text-slate-300">{t.name}</span>
-                  <button onClick={() => removeTerminal(t.id)} className="text-red-400 hover:text-red-300 p-1">✕</button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={t.command}
-                    onChange={(e) => updateTerminalCommand(t.id, e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono text-slate-300 focus:ring-1 focus:ring-blue-500"
-                  >
-                    <option value="npm start">npm start</option>
-                    <option value="npm run dev">npm run dev</option>
-                  </select>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-                  <span className="text-xs font-mono text-slate-500">{t.x !== null ? `Pos: (${t.x}, ${t.y})` : 'Pos: Not set'}</span>
-                  <button
-                    onClick={() => setSettingMode(settingMode === `terminal-${t.id}` ? null : `terminal-${t.id}`)}
-                    className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${settingMode === `terminal-${t.id}` ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}
-                  >
-                    {settingMode === `terminal-${t.id}` ? 'Cancel' : 'Set Pos'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* DPI Scale Setting */}
-        <div className="bg-slate-800 p-4 rounded-xl space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-            <label className="font-medium text-slate-300">DPI Scale</label>
-            <span className="font-mono text-cyan-400 bg-slate-900 px-2 py-1 rounded">{dpiScale.toFixed(2)}</span>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="2"
-            step="0.05"
-            value={dpiScale}
-            onChange={(e) => setDpiScale(parseFloat(e.target.value))}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-          />
-          <p className="text-xs text-slate-500">Adjust if mouse clicks are offset significantly.</p>
-        </div>
-
-        {/* X/Y Offset Fine-tuning */}
-        <div className="bg-slate-800 p-4 rounded-xl space-y-4">
-          <label className="font-medium text-slate-300 block border-b border-slate-700 pb-2">Screen Offset Correction</label>
-
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-slate-400">X Offset</span>
-                <span className="font-mono text-cyan-400 bg-slate-900 px-2 py-1 rounded">{offsetX}px</span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                step="5"
-                value={offsetX}
-                onChange={(e) => setOffsetX(parseInt(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-              />
+          {/* Terminals Config Card */}
+          <div className="bg-slate-800 p-4 rounded-xl space-y-4 shadow-sm border border-slate-700/50">
+            <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+              <h3 className="font-medium text-slate-200">Terminals</h3>
+              <button onClick={addTerminal} className="text-xs bg-green-600 active:bg-green-700 px-3 py-1.5 rounded font-bold text-white shadow-sm">+ Add</button>
             </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-slate-400">Y Offset</span>
-                <span className="font-mono text-cyan-400 bg-slate-900 px-2 py-1 rounded">{offsetY}px</span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                step="5"
-                value={offsetY}
-                onChange={(e) => setOffsetY(parseInt(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-              />
+            <div className="space-y-3">
+              {terminals.length === 0 && <div className="text-center text-slate-500 text-sm py-2">No terminals added</div>}
+              {terminals.map(t => (
+                <div key={t.id} className="bg-slate-900 p-3 rounded-lg flex flex-col gap-3 border border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-300">{t.name}</span>
+                    <button onClick={() => removeTerminal(t.id)} className="text-slate-500 hover:text-red-400 px-2">✕</button>
+                  </div>
+
+                  <div className="grid grid-cols-[1fr,auto] gap-2 items-center">
+                    <select
+                      value={t.command}
+                      onChange={(e) => updateTerminalCommand(t.id, e.target.value)}
+                      className="bg-slate-800 border border-slate-700 rounded px-2 py-2 text-xs text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="npm start">npm start</option>
+                      <option value="npm run dev">npm run dev</option>
+                    </select>
+
+                    <button
+                      onClick={() => setSettingMode(settingMode === `terminal-${t.id}` ? null : `terminal-${t.id}`)}
+                      className={`px-3 py-2 rounded text-xs font-bold transition-all whitespace-nowrap ${settingMode === `terminal-${t.id}` ? 'bg-yellow-500 text-black shadow-lg' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+                    >
+                      {settingMode === `terminal-${t.id}` ? 'Cancel' : '🎯 Set Pos'}
+                    </button>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 font-mono text-right">
+                    {t.x !== null ? `(${t.x}, ${t.y})` : 'Position not set'}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
 
-        <div className="bg-slate-800 p-4 rounded-xl">
-          <h3 className="font-medium text-slate-300 mb-2">Instructions</h3>
-          <ul className="text-sm text-slate-400 list-disc list-inside space-y-1">
-            <li>Use DPI Scale for overall scaling issues (e.g. 1.25 for 125%).</li>
-            <li>Use X/Y Offsets to fine-tune if clicks are consistently off by a few pixels.</li>
-            <li>Changes are saved automatically.</li>
-          </ul>
-        </div>
+          {/* Advanced Settings (DPI/Offset) */}
+          <div className="bg-slate-800 p-4 rounded-xl space-y-4 shadow-sm border border-slate-700/50">
+            <h3 className="font-medium text-slate-200 border-b border-slate-700 pb-2">Fine Tuning</h3>
 
-        <button
-          onClick={() => setShowSettings(false)}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white shadow-lg sticky bottom-0"
-        >
-          Save & Close
-        </button>
+            <div className="space-y-4">
+              {/* DPI */}
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-xs text-slate-400">DPI Scale</label>
+                  <span className="text-xs font-mono text-cyan-400">{dpiScale.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="2"
+                  step="0.05"
+                  value={dpiScale}
+                  onChange={(e) => setDpiScale(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Offsets */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-slate-400">X Offset</label>
+                    <span className="text-xs font-mono text-cyan-400">{offsetX}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="5"
+                    value={offsetX}
+                    onChange={(e) => setOffsetX(parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs text-slate-400">Y Offset</label>
+                    <span className="text-xs font-mono text-cyan-400">{offsetY}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="5"
+                    value={offsetY}
+                    onChange={(e) => setOffsetY(parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-8"></div> {/* Spacer */}
+        </div>
       </div>
     </div>
   );

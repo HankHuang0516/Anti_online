@@ -1,4 +1,4 @@
-const Jimp = require('jimp');
+有沒有更聰明的做法? 可以把web內容完整const Jimp = require('jimp');
 const path = require('path');
 
 const convert = async (filename, outputName) => {
