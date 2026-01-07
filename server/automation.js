@@ -300,9 +300,10 @@ const typeText = async (text, clickX, clickY) => {
         }
 
         // Step 2: Copy text to clipboard using PowerShell and paste
-        // Escape special characters for PowerShell
-        const escapedText = text.replace(/'/g, "''");
-        execSync(`powershell -command "Set-Clipboard -Value '${escapedText}'"`, { encoding: 'utf-8' });
+        // Step 2: Copy text to clipboard using PowerShell (Base64 encoded to avoid character escaping issues)
+        const base64Text = Buffer.from(text, 'utf-8').toString('base64');
+        const psCommand = `powershell -command "$str = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${base64Text}')); Set-Clipboard -Value $str"`;
+        execSync(psCommand, { encoding: 'utf-8' });
         await keyboard.pressKey(Key.LeftControl, Key.V);
         await keyboard.releaseKey(Key.LeftControl, Key.V);
         console.log(`Pasted text via clipboard: ${text}`);
