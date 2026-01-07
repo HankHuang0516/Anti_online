@@ -172,14 +172,23 @@ function App() {
     }
   }, [dpiScale, connected]);
   // Calculate logical coordinates from click on image
+  // Calculate logical coordinates from click on image
   const getLogicalCoords = (e) => {
-    const container = e.currentTarget;
-    const img = container.querySelector('img');
+    const target = e.currentTarget;
+    // If the click is on the image itself, use it. Otherwise look for an image inside.
+    const img = target.tagName === 'IMG' ? target : target.querySelector('img');
+
     if (!img) return null;
 
     const rect = img.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
+
+    // Safety check: ignore clicks outside the image bounds (if triggered by container)
+    if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) {
+      return null;
+    }
+
     const scaleX = img.naturalWidth / rect.width;
     const scaleY = img.naturalHeight / rect.height;
     const physicalX = Math.floor(clickX * scaleX);
