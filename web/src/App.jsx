@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-// Connect to local server
-const socket = io('http://localhost:3001');
-
 // Load saved settings from localStorage
 const loadSettings = () => {
   try {
@@ -17,7 +14,13 @@ const loadSettings = () => {
 function App() {
   const savedSettings = loadSettings();
 
+  // Server URL Management
+  const [serverUrl, setServerUrl] = useState(localStorage.getItem('anti_online_server_url') || 'http://localhost:3001');
+  const [socket, setSocket] = useState(null);
+
   const [connected, setConnected] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
   const [logs, setLogs] = useState([]);
   const [macroMode, setMacroMode] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -66,6 +69,19 @@ function App() {
       setScreenImage(`data:image/jpeg;base64,${data.image}`);
     });
 
+    socket.on('auth_result', (data) => {
+      if (data.success) {
+        setIsAuthenticated(true);
+        addLog('System', 'Authentication successful');
+        // Resend settings after auth
+        socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
+        socket.emit('command', { type: 'SET_SCREEN_OFFSET', x: offsetX, y: offsetY, width: currentScreen === 0 ? 1920 : 1920, height: currentScreen === 0 ? 1200 : 1080 }); // Simplification, ideally use exact values
+      } else {
+        alert('Invalid access code');
+        addLog('System', 'Authentication failed');
+      }
+    });
+
     socket.on('error', (data) => {
       addLog('Error', data.message);
     });
@@ -75,9 +91,15 @@ function App() {
       socket.off('disconnect');
       socket.off('log');
       socket.off('screen_update');
+      socket.off('auth_result');
       socket.off('error');
     };
-  }, []);
+  }, [dpiScale, offsetX, offsetY, currentScreen]); // Added dependencies to likely resend settings
+
+  const handleAuth = (e) => {
+    e.preventDefault();
+    socket.emit('command', { type: 'AUTH', code: accessCode });
+  };
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -96,13 +118,13 @@ function App() {
   };
 
   const handleStartAgent = () => {
-    socket.emit('command', { type: 'START_AGENT' });
+    socket?.emit('command', { type: 'START_AGENT' });
   };
 
   const toggleMacroMode = () => {
     const newState = !macroMode;
     setMacroMode(newState);
-    socket.emit('command', { type: 'MACRO_MODE', value: newState });
+    socket?.emit('command', { type: 'MACRO_MODE', value: newState });
   };
 
   const handleSendInput = (e) => {
@@ -112,7 +134,7 @@ function App() {
       addLog('Error', 'Please set dialog coordinates first');
       return;
     }
-    socket.emit('command', {
+    socket?.emit('command', {
       type: 'INPUT_TEXT',
       text: inputText,
       clickX: dialogCoords.x,
@@ -211,6 +233,50 @@ function App() {
   };
 
   const isSettingAnything = settingMode !== null;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-200 flex items-center justify-center p-4">
+        <div className="bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent mb-6 text-center">
+            Antigravity Access
+          </h1>
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1">Server URL</label>
+              <input
+                type="text"
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder="http://localhost:3001"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1">Access Code</label>
+              <input
+                type="password"
+                value={accessCode}
+                onChange={(e) => setAccessCode(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter access code"
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition-all"
+            >
+              Verify Identity
+            </button>
+            <div className={`text-center text-xs ${connected ? 'text-green-500' : 'text-yellow-500'}`}>
+              {connected ? '🟢 Connected to Server' : `🔴 Connecting to ${serverUrl}...`}
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-brand-dark text-slate-200 p-8 font-sans">

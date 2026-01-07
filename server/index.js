@@ -25,6 +25,7 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
+    socket.authenticated = false;
 
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
@@ -32,6 +33,27 @@ io.on('connection', (socket) => {
 
     // Handle commands from Web Client
     socket.on('command', async (data) => {
+        // Handle AUTH command separately
+        if (data.type === 'AUTH') {
+            const expectedCode = process.env.ACCESS_CODE;
+            if (data.code === expectedCode) {
+                socket.authenticated = true;
+                socket.emit('auth_result', { success: true });
+                console.log(`Client ${socket.id} authenticated successfully`);
+            } else {
+                socket.emit('auth_result', { success: false, message: 'Invalid code' });
+                console.log(`Client ${socket.id} failed authentication`);
+            }
+            return;
+        }
+
+        // Require authentication for all other commands
+        if (!socket.authenticated) {
+            console.log(`Unauthenticated command rejected from ${socket.id}`);
+            socket.emit('error', { message: 'Authentication required' });
+            return;
+        }
+
         console.log('Received command:', data);
         try {
             if (data.type === 'START_AGENT') {
