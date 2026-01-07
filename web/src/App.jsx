@@ -51,13 +51,16 @@ function App() {
   }, [dialogCoords, terminals, dpiScale, offsetX, offsetY, currentScreen]);
 
   useEffect(() => {
+    if (!socket) return;
+
     socket.on('connect', () => {
       setConnected(true);
-      addLog('System', 'Connected to server');
+      addLog('System', `Connected to ${serverUrl}`);
     });
 
     socket.on('disconnect', () => {
       setConnected(false);
+      setIsAuthenticated(false);
       addLog('System', 'Disconnected from server');
     });
 
@@ -94,7 +97,7 @@ function App() {
       socket.off('auth_result');
       socket.off('error');
     };
-  }, [dpiScale, offsetX, offsetY, currentScreen]); // Added dependencies to likely resend settings
+  }, [socket, dpiScale, offsetX, offsetY, currentScreen]); // Added dependencies to likely resend settings
 
   const handleAuth = (e) => {
     e.preventDefault();

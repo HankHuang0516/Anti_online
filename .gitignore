@@ -27,3 +27,5 @@ server/server_snapshot.png
 server/*.jpg
 server/*.png
 !server/assets/
+
+Anti_only.txt
