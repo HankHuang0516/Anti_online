@@ -194,7 +194,8 @@ const startMonitoring = () => {
 };
 
 // Main input loop - runs after text is typed
-const runInputLoop = async () => {
+// Main input loop - runs after text is typed
+const runInputLoop = async (x, y) => {
     if (isInputLoopRunning) {
         console.log("Input loop already running, stopping previous...");
         shouldStopLoop = true;
@@ -204,72 +205,47 @@ const runInputLoop = async () => {
     isInputLoopRunning = true;
     shouldStopLoop = false;
 
+    // Use default coordinates if not provided (fallback)
+    const targetX = x !== undefined ? x : 0;
+    const targetY = y !== undefined ? y : 0;
+
     try {
-        await loadTemplates();
+        console.log(`Starting simple input loop at (${targetX}, ${targetY})...`);
+        ioInstance?.emit('log', { message: "Starting simple loop: Click -> Alt+Enter every 10s" });
 
         let loopCount = 0;
 
         while (!shouldStopLoop) {
             loopCount++;
             console.log(`\n=== Input Loop Iteration ${loopCount} ===`);
-            ioInstance?.emit('log', { message: `Loop iteration ${loopCount} - Waiting for accept_button_then_enter...` });
+            ioInstance?.emit('log', { message: `Loop iteration ${loopCount} - Clicking & Alt+Enter` });
 
-            // Step 1: Wait for accept_button_then_enter.jpg
-            console.log("Waiting for accept_button_then_enter.jpg...");
-            const acceptButtonMatch = await waitForTemplate(acceptButtonTemplate, 60000, 800);
+            // Step 1: Click on Dialog Position
+            if (targetX !== 0 || targetY !== 0) {
+                await mouse.setPosition({ x: targetX, y: targetY });
+                await mouse.leftClick();
+                console.log(`Clicked dialog at (${targetX}, ${targetY})`);
+                await sleep(500);
+            } else {
+                console.warn("Skipping click - coordinates not set");
+            }
 
             if (shouldStopLoop) break;
 
-            if (!acceptButtonMatch) {
-                console.log("Timeout waiting for accept_button_then_enter.jpg");
-                ioInstance?.emit('log', { message: "Timeout waiting for accept button, retrying..." });
-                continue;
-            }
-
-            console.log(`Found accept_button_then_enter at (${acceptButtonMatch.x}, ${acceptButtonMatch.y}) score: ${acceptButtonMatch.score.toFixed(2)}`);
-            ioInstance?.emit('log', { message: `Found accept_button, pressing Alt+Enter...` });
-
             // Step 2: Press Alt+Enter
-            await sleep(300);
             await keyboard.pressKey(Key.LeftAlt, Key.Enter);
             await keyboard.releaseKey(Key.LeftAlt, Key.Enter);
             console.log("Pressed Alt+Enter");
 
-            await sleep(500);
-
             if (shouldStopLoop) break;
 
-            // Step 3: Wait for accept_all_new.png
-            console.log("Waiting for accept_all_new.png...");
-            ioInstance?.emit('log', { message: "Waiting for accept_all button..." });
-
-            const acceptAllMatch = await waitForTemplate(acceptAllTemplate, 30000, 500);
-
-            if (shouldStopLoop) break;
-
-            if (!acceptAllMatch) {
-                console.log("Timeout waiting for accept_all_new.png");
-                ioInstance?.emit('log', { message: "Timeout waiting for accept_all, retrying loop..." });
-                continue;
+            // Step 3: Wait 10 seconds
+            console.log("Waiting 10 seconds...");
+            // Check for stop every second to allow faster stopping
+            for (let i = 0; i < 10; i++) {
+                if (shouldStopLoop) break;
+                await sleep(1000);
             }
-
-            console.log(`Found accept_all at (${acceptAllMatch.x}, ${acceptAllMatch.y}) score: ${acceptAllMatch.score.toFixed(2)}`);
-
-            // Step 4: Click on accept_all
-            // Convert physical coords to logical (divide by 1.25 for 125% scaling)
-            const logicalX = Math.floor(acceptAllMatch.x / 1.25);
-            const logicalY = Math.floor(acceptAllMatch.y / 1.25);
-
-            console.log(`Clicking accept_all at logical (${logicalX}, ${logicalY})`);
-            ioInstance?.emit('log', { message: `Clicking accept_all at (${logicalX}, ${logicalY})` });
-
-            await mouse.setPosition({ x: logicalX, y: logicalY });
-            await mouse.leftClick();
-
-            // Debounce before next loop iteration
-            await sleep(2000);
-
-            console.log("Loop iteration complete, waiting for next accept_button_then_enter...");
         }
 
     } catch (error) {
@@ -341,7 +317,7 @@ const typeText = async (text, clickX, clickY) => {
 
         // Step 4: Start the input loop
         await sleep(500);
-        runInputLoop(); // Don't await - run in background
+        runInputLoop(clickX, clickY); // Don't await - run in background
 
     } catch (err) {
         console.error("Typing failed:", err);

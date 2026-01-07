@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -26,6 +27,13 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     socket.authenticated = false;
+
+    // Authenticate via handshake if provided
+    if (socket.handshake.auth && socket.handshake.auth.token === process.env.ACCESS_CODE) {
+        socket.authenticated = true;
+        socket.emit('auth_result', { success: true });
+        console.log(`Client ${socket.id} authenticated via handshake`);
+    }
 
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
@@ -64,7 +72,7 @@ io.on('connection', (socket) => {
                 automation.setMacroMode(active);
                 socket.emit('log', { message: `Macro mode set to ${active}` });
             } else if (data.type === 'INPUT_TEXT') {
-                await automation.typeText(data.text, data.clickX, data.clickY);
+                await automation.typeText(data.text, data.dialogX, data.dialogY);
                 socket.emit('log', { message: `Typed: ${data.text}` });
             } else if (data.type === 'KEY_PRESS') {
                 await automation.pressKey(data.key);

@@ -481,6 +481,9 @@ function App() {
               const newSocket = io(serverUrl, {
                 auth: { token: accessCode },
                 transports: ['websocket', 'polling'],
+                extraHeaders: {
+                  "ngrok-skip-browser-warning": "true"
+                }
               });
               setSocket(newSocket);
               addLog('System', `Attempting to connect to ${serverUrl}...`);
