@@ -101,6 +101,10 @@ function App() {
 
   const handleAuth = (e) => {
     e.preventDefault();
+    if (!socket) {
+      alert('Socket not connected yet. Please wait or check Server URL.');
+      return;
+    }
     socket.emit('command', { type: 'AUTH', code: accessCode });
   };
 
