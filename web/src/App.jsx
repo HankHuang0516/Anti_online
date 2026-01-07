@@ -50,6 +50,28 @@ function App() {
     localStorage.setItem('anti_online_settings', JSON.stringify(settings));
   }, [dialogCoords, terminals, dpiScale, offsetX, offsetY, currentScreen]);
 
+  // Initialize socket when server URL changes
+  useEffect(() => {
+    if (socket) {
+      socket.disconnect();
+    }
+
+    // Add header to skip ngrok browser warning
+    const newSocket = io(serverUrl, {
+      extraHeaders: {
+        "ngrok-skip-browser-warning": "true"
+      }
+    });
+    setSocket(newSocket);
+
+    // Save URL for next time
+    localStorage.setItem('anti_online_server_url', serverUrl);
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [serverUrl]);
+
   useEffect(() => {
     if (!socket) return;
 
