@@ -6,14 +6,24 @@ const cors = require('cors');
 const automation = require('./automation');
 
 const app = express();
-app.use(cors());
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://hankhuang0516.github.io"
+];
+
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+}));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allow all for local dev
-        methods: ["GET", "POST"]
+        origin: allowedOrigins,
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 

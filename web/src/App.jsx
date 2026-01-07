@@ -90,10 +90,11 @@ function App() {
       socket.disconnect();
     }
 
-    // Add header to skip ngrok browser warning
+    // Add headers to skip browser warnings (Ngrok & LocalTunnel)
     const newSocket = io(serverUrl, {
       extraHeaders: {
-        "ngrok-skip-browser-warning": "true"
+        "ngrok-skip-browser-warning": "true",
+        "Bypass-Tunnel-Reminder": "true"
       }
     });
     setSocket(newSocket);
