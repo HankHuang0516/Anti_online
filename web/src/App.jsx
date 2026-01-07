@@ -310,7 +310,51 @@ function App() {
 
   const SettingsModal = () => (
     <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex flex-col overflow-hidden">
-      {/* 1. Header (Fixed) */}
+
+      {/* --- Calibration Overlay (Full Screen) --- */}
+      {isSettingAnything && (
+        <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in fade-in duration-200">
+          <div className="flex justify-between items-center p-4 bg-slate-900/80 backdrop-blur border-b border-slate-700">
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-lg">Tap to Calibrate</span>
+              <span className="text-yellow-400 text-xs font-mono">
+                Setting: {settingMode === 'dialog' ? 'Dialog Position' : settingMode}
+              </span>
+            </div>
+            <button
+              onClick={() => setSettingMode(null)}
+              className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+
+          <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+            {screenImage ? (
+              <img
+                src={screenImage}
+                alt="Calibration Overlay"
+                className="max-w-full max-h-full object-contain cursor-crosshair"
+                onClick={handleImageClick}
+                draggable={false}
+              />
+            ) : (
+              <div className="text-slate-500">Waiting for stream...</div>
+            )}
+
+            {/* Overlay Guidelines */}
+            <div className="absolute inset-0 pointer-events-none border-2 border-yellow-500/30"></div>
+            <div className="absolute bottom-8 left-0 right-0 text-center pointer-events-none">
+              <span className="bg-black/60 text-white px-3 py-1 rounded-full text-sm backdrop-blur">
+                Tap the exact target on screen
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Normal Settings UI --- */}
+      {/* 1. Header */}
       <div className="flex justify-between items-center px-4 py-3 border-b border-slate-700 bg-slate-900 shadow-md z-10">
         <h2 className="text-lg font-bold text-white">Settings & Calibration</h2>
         <button
@@ -321,48 +365,18 @@ function App() {
         </button>
       </div>
 
-      {/* 2. Live Preview (Fixed at Top) */}
-      <div className="flex-shrink-0 bg-black/40 p-2 border-b border-slate-700">
-        <div className="space-y-1 max-w-lg mx-auto w-full">
-          <div className="flex justify-between items-center px-1">
-            <span className="text-xs text-slate-400 font-medium">Live Preview (Tap to Set)</span>
-            {isSettingAnything && <span className="text-yellow-500 text-xs font-bold animate-pulse">Select Target...</span>}
-          </div>
-
-          <div
-            className={`rounded-lg bg-black border overflow-hidden aspect-video flex items-center justify-center relative cursor-crosshair shadow-lg ${isSettingAnything ? 'border-yellow-500 ring-2 ring-yellow-500/30' : 'border-slate-700'}`}
-            onClick={handleImageClick}
-          >
-            {screenImage ? (
-              <img
-                src={screenImage}
-                alt="Calibration View"
-                className="w-full h-full object-contain"
-                draggable={false}
-              />
-            ) : (
-              <div className="text-slate-600 text-sm">Waiting for stream...</div>
-            )}
-            {/* Overlays */}
-            {isSettingAnything && (
-              <div className="absolute inset-0 bg-yellow-500/10 pointer-events-none flex items-center justify-center">
-                <div className="bg-black/80 px-3 py-1.5 rounded-full text-white text-xs backdrop-blur-md border border-white/20 shadow-xl transform scale-105">
-                  Tap position on image
-                </div>
-              </div>
-            )}
-            {dialogCoords && (
-              <div className="absolute bottom-1 left-1 pointer-events-none bg-green-500/80 text-white px-1.5 py-0.5 rounded text-[10px] font-mono backdrop-blur-sm">
-                Dialog: {dialogCoords.x},{dialogCoords.y}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* 3. Settings Controls (Scrollable) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 lg:p-6 pb-24">
         <div className="max-w-xl mx-auto space-y-6">
+
+          {/* Info Card */}
+          <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-xl flex items-start gap-3">
+            <span className="text-xl">💡</span>
+            <div className="text-sm text-blue-200">
+              <p className="font-bold mb-1">How to Calibrate?</p>
+              <p className="opacity-80">Click the <span className="font-bold text-white">"🎯 Set Position"</span> button, and the screen will switch to full-screen mode for you to tap the target.</p>
+            </div>
+          </div>
 
           {/* Dialog Position Card */}
           <div className="bg-slate-800 p-4 rounded-xl space-y-3 shadow-sm border border-slate-700/50">
@@ -373,12 +387,12 @@ function App() {
               </div>
             </div>
             <button
-              onClick={() => setSettingMode(settingMode === 'dialog' ? null : 'dialog')}
-              className={`w-full py-2.5 rounded-lg text-sm font-bold transition-all ${settingMode === 'dialog' ? 'bg-yellow-500 text-black shadow-lg scale-[1.02]' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
+              onClick={() => setSettingMode('dialog')}
+              className="w-full py-3 rounded-lg text-sm font-bold transition-all bg-slate-700 text-slate-200 hover:bg-slate-600 hover:text-white active:scale-[0.98] flex items-center justify-center gap-2"
             >
-              {settingMode === 'dialog' ? 'Cancel Selection' : '🎯 Set Position'}
+              🎯 Set Position
             </button>
-            <p className="text-xs text-slate-500">Click button then tap the preview image.</p>
+            <p className="text-xs text-slate-500">The "Accept" button location.</p>
           </div>
 
           {/* Terminals Config Card */}
@@ -408,10 +422,10 @@ function App() {
                     </select>
 
                     <button
-                      onClick={() => setSettingMode(settingMode === `terminal-${t.id}` ? null : `terminal-${t.id}`)}
-                      className={`px-3 py-2 rounded text-xs font-bold transition-all whitespace-nowrap ${settingMode === `terminal-${t.id}` ? 'bg-yellow-500 text-black shadow-lg' : 'bg-slate-700 text-slate-200 active:bg-slate-600'}`}
+                      onClick={() => setSettingMode(`terminal-${t.id}`)}
+                      className="px-3 py-2 rounded text-xs font-bold transition-all whitespace-nowrap bg-slate-700 text-slate-200 active:bg-slate-600 hover:text-white flex items-center gap-1"
                     >
-                      {settingMode === `terminal-${t.id}` ? 'Cancel' : '🎯 Set Pos'}
+                      🎯 Set Pos
                     </button>
                   </div>
 
