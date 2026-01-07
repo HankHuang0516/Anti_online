@@ -786,39 +786,31 @@ function App() {
                 </button>
               </form>
             </div>
-            Send
-          </button>
-        </form>
-      </div>
-    </div>
-        </div >
-
-
-    {/* Logs */ }
-    < div className = "rounded-2xl bg-black/40 border border-slate-800 overflow-hidden backdrop-blur-md" >
-          <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
-            <span className="text-xs font-mono text-slate-400">TERMINAL OUTPUT</span>
-            <span className="text-xs font-mono text-slate-500">{logs.length} events</span>
-          </div>
-          <div className="h-40 overflow-y-auto p-4 space-y-1 font-mono text-sm">
-            {logs.length === 0 && (
-              <div className="text-slate-600 italic">No activity recorded...</div>
-            )}
-            {logs.map((log, index) => (
-              <div key={index} className="flex gap-3 animate-fade-in">
-                <span className="text-slate-500 shrink-0">[{log.time}]</span>
-                <span className={`font-bold shrink-0 w-16 ${log.source === 'Server' ? 'text-blue-400' : log.source === 'Error' ? 'text-red-400' : 'text-green-400'}`}>
-                  {log.source}:
-                </span>
-                <span className="text-slate-300 break-all">{log.message}</span>
+            {/* Logs */}
+            <div className="rounded-2xl bg-black/40 border border-slate-800 overflow-hidden backdrop-blur-md">
+              <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
+                <span className="text-xs font-mono text-slate-400">TERMINAL OUTPUT</span>
+                <span className="text-xs font-mono text-slate-500">{logs.length} events</span>
               </div>
-            ))}
-            <div ref={logEndRef} />
-          </div>
+              <div className="h-40 overflow-y-auto p-4 space-y-1 font-mono text-sm">
+                {logs.length === 0 && (
+                  <div className="text-slate-600 italic">No activity recorded...</div>
+                )}
+                {logs.map((log, index) => (
+                  <div key={index} className="flex gap-3 animate-fade-in">
+                    <span className="text-slate-500 shrink-0">[{log.time}]</span>
+                    <span className={`font-bold shrink-0 w-16 ${log.source === 'Server' ? 'text-blue-400' : log.source === 'Error' ? 'text-red-400' : 'text-green-400'}`}>
+                      {log.source}:
+                    </span>
+                    <span className="text-slate-300 break-all">{log.message}</span>
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+            </div >
+          </div >
         </div >
-      </div >
-    </div >
-  );
+        );
 }
 
-export default App;
+        export default App;
