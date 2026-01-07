@@ -83,6 +83,13 @@ function App() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
+  // Sync DPI Scale to server
+  useEffect(() => {
+    if (connected) {
+      socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
+    }
+  }, [dpiScale, connected]);
+
 
   const addLog = (source, message) => {
     setLogs(prev => [...prev.slice(-49), { time: new Date().toLocaleTimeString(), source, message }]);

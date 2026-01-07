@@ -15,6 +15,7 @@ let shouldStopLoop = false;
 let isAutoAcceptRunning = false;
 let shouldStopAutoAccept = false;
 let screenOffset = { x: 0, y: 0, width: 0, height: 0 }; // Offset and size for multi-monitor support (0 = use default)
+let dpiScale = 1.25; // DPI scaling factor, can be updated from web UI
 
 // Template images (loaded on first use)
 let acceptButtonTemplate = null;
@@ -452,9 +453,9 @@ const autoAcceptLoop = async () => {
                 const match = await findTemplate(screenImg, acceptExactTemplate, 0.92);
 
                 if (match) {
-                    // Convert physical coords to logical (divide by 1.25 for 125% scaling)
-                    const logicalX = Math.floor(match.x / 1.25);
-                    const logicalY = Math.floor(match.y / 1.25);
+                    // Convert physical coords to logical using dpiScale
+                    const logicalX = Math.floor(match.x / dpiScale);
+                    const logicalY = Math.floor(match.y / dpiScale);
 
                     console.log(`Auto Accept: Found at (${logicalX}, ${logicalY}) score: ${match.score.toFixed(2)}`);
                     ioInstance?.emit('log', { message: `Auto clicked Accept at (${logicalX}, ${logicalY})` });
@@ -497,6 +498,13 @@ const setScreenOffset = (x, y, width = 0, height = 0) => {
     ioInstance?.emit('log', { message: `Screen switched: offset (${x}, ${y})` });
 };
 
+// Set DPI scale for coordinate conversion
+const setDpiScale = (scale) => {
+    dpiScale = scale;
+    console.log(`DPI scale set to ${scale}`);
+    ioInstance?.emit('log', { message: `DPI scale set to ${scale}` });
+};
+
 module.exports = {
     init,
     startAgent,
@@ -509,5 +517,6 @@ module.exports = {
     mouseMove,
     startAutoAccept,
     stopAutoAccept,
-    setScreenOffset
+    setScreenOffset,
+    setDpiScale
 };

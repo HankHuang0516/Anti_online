@@ -65,6 +65,8 @@ io.on('connection', (socket) => {
                 socket.emit('log', { message: 'Auto Accept stopped' });
             } else if (data.type === 'SET_SCREEN_OFFSET') {
                 automation.setScreenOffset(data.x, data.y, data.width || 0, data.height || 0);
+            } else if (data.type === 'SET_DPI_SCALE') {
+                automation.setDpiScale(data.scale);
             }
         } catch (error) {
             console.error('Command error:', error);
