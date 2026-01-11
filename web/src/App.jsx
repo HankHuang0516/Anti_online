@@ -678,7 +678,23 @@ function App() {
 
           {/* Advanced Settings (DPI/Offset) */}
           <div className="bg-slate-800 p-4 rounded-xl space-y-4 shadow-sm border border-slate-700/50">
-            <h3 className="font-medium text-slate-200 border-b border-slate-700 pb-2">Fine Tuning</h3>
+            <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+              <h3 className="font-medium text-slate-200">Fine Tuning</h3>
+              <button
+                onClick={() => {
+                  if (!socket) return;
+                  socket.emit('command', { type: 'SWITCH_MONITOR' });
+                  addLog('System', 'Requested Sync Monitor Switch...');
+                }}
+                disabled={!connected}
+                className={`text-xs px-3 py-1.5 rounded font-bold text-white shadow-sm transition-colors ${connected
+                    ? 'bg-purple-600 hover:bg-purple-500'
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  }`}
+              >
+                Switch Monitor
+              </button>
+            </div>
 
             <div className="space-y-4">
               {/* DPI */}
