@@ -1,10 +1,20 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
-const app = express();
+const http = require('http');
+const { Server } = require('socket.io');
 
+const app = express();
 app.use(cors());
 app.use(express.json());
+
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Allow all origins for simplicity/demo
+        methods: ["GET", "POST"]
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 const ACCESS_CODE = process.env.ACCESS_CODE;
@@ -13,15 +23,13 @@ const DATABASE_URL = process.env.DATABASE_URL;
 // Database Connection
 const pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false } // Required for Railway generic Postgres
+    ssl: { rejectUnauthorized: false }
 });
 
 // Initialize Database
 const initDB = async () => {
     try {
         const client = await pool.connect();
-        // Create simple key-value store or user_settings table
-        // For single user mode, we can just use ID=1
         await client.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
         id SERIAL PRIMARY KEY,
@@ -42,30 +50,13 @@ const initDB = async () => {
     }
 };
 
-initDB();
+if (DATABASE_URL) {
+    initDB();
+}
 
-// Middleware to verify code
-const verifyAuth = (req, res, next) => {
-    const code = req.headers['x-access-code'] || req.body.code;
-    if (!ACCESS_CODE) return next(); // If no code set on server, allow? Or block. Better block.
-    // Actually for initial verify we check body.code.
-    // For data sync we might use header.
-
-    if (code === ACCESS_CODE) {
-        next();
-    } else {
-        res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
-};
-
+// REST Endpoints
 app.post('/verify', (req, res) => {
     const { code } = req.body;
-
-    if (!ACCESS_CODE) {
-        console.error('ACCESS_CODE env var not set');
-        return res.status(500).json({ success: false, message: 'Server misconfiguration' });
-    }
-
     if (code === ACCESS_CODE) {
         return res.json({ success: true });
     } else {
@@ -78,7 +69,6 @@ app.get('/data', async (req, res) => {
     if (ACCESS_CODE && code !== ACCESS_CODE) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-
     try {
         const client = await pool.connect();
         const result = await client.query('SELECT data FROM user_settings WHERE id = 1');
@@ -92,15 +82,10 @@ app.get('/data', async (req, res) => {
 
 app.post('/data', async (req, res) => {
     const code = req.headers['x-access-code'];
-    // Also support body.code if header not present?
-    // Let's rely on header for cleaner data payload
     if (ACCESS_CODE && code !== ACCESS_CODE) {
         return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-
     const { data } = req.body;
-    if (!data) return res.status(400).json({ error: 'Missing data' });
-
     try {
         const client = await pool.connect();
         await client.query('UPDATE user_settings SET data = $1 WHERE id = 1', [data]);
@@ -113,9 +98,65 @@ app.post('/data', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    res.send('Anti Online Auth Server Running');
+    res.send('Anti Online Relay Server Running');
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// --- SOCKET.IO RELAY LOGIC ---
+
+io.on('connection', (socket) => {
+    const auth = socket.handshake.auth || {};
+    const token = auth.token;
+    const role = auth.role; // 'host' (local server) or undefined (viewer)
+
+    // 1. Authenticate
+    if (ACCESS_CODE && token !== ACCESS_CODE) {
+        console.log('Socket auth failed');
+        socket.emit('auth_result', { success: false, message: 'Invalid token' });
+        socket.disconnect(true);
+        return;
+    }
+
+    socket.emit('auth_result', { success: true });
+
+    // 2. Role Assignment
+    if (role === 'host') {
+        console.log('HOST connected');
+        socket.join('host');
+
+        // Notify viewers that host is online
+        io.to('viewer').emit('log', { message: 'Host connected' });
+
+        // Relay Events from Host -> Viewers
+        socket.on('screen_update', (data) => {
+            // Broadcast to all viewers (volatile to drop frames if lagged)
+            io.to('viewer').emit('screen_update', data);
+        });
+
+        socket.on('log', (data) => {
+            io.to('viewer').emit('log', data);
+        });
+
+        socket.on('disconnect', () => {
+            console.log('HOST disconnected');
+            io.to('viewer').emit('log', { message: 'Host disconnected' });
+        });
+
+    } else {
+        // Viewer
+        console.log('VIEWER connected');
+        socket.join('viewer');
+
+        // Relay Events from Viewer -> Host
+        socket.on('command', (data) => {
+            io.to('host').emit('command', data);
+        });
+
+        socket.on('disconnect', () => {
+            console.log('VIEWER disconnected');
+        });
+    }
+});
+
+server.listen(PORT, () => {
+    console.log(`Relay Server running on port ${PORT}`);
 });
