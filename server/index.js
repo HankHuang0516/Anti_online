@@ -77,10 +77,9 @@ io.on('connection', (socket) => {
             if (data.type === 'START_AGENT') {
                 await automation.startAgent();
                 socket.emit('log', { message: 'Agent start command sent.' });
-            } else if (data.type === 'MACRO_MODE') {
-                const active = data.value; // true/false
-                automation.setMacroMode(active);
-                socket.emit('log', { message: `Macro mode set to ${active}` });
+            } else if (data.type === 'MACRO_LOOP_START') {
+                automation.startMacroLoop(data.x, data.y);
+                socket.emit('log', { message: `Macro Loop started at (${data.x}, ${data.y})` });
             } else if (data.type === 'INPUT_TEXT') {
                 await automation.typeText(data.text, data.dialogX, data.dialogY);
                 socket.emit('log', { message: `Typed: ${data.text}` });
@@ -107,6 +106,9 @@ io.on('connection', (socket) => {
                 automation.setScreenOffset(data.x, data.y, data.width || 0, data.height || 0);
             } else if (data.type === 'SET_DPI_SCALE') {
                 automation.setDpiScale(data.scale);
+            } else if (data.type === 'TIMED_LOOP_START') {
+                automation.runTimedLoop(data.x, data.y, data.text);
+                socket.emit('log', { message: `Timed loop started at (${data.x}, ${data.y})` });
             }
         } catch (error) {
             console.error('Command error:', error);

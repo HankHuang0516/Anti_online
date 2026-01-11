@@ -21,6 +21,7 @@ let dpiScale = 1.25; // DPI scaling factor, can be updated from web UI
 let acceptButtonTemplate = null;
 let acceptAllTemplate = null;
 let acceptExactTemplate = null;
+let retryButtonTemplate = null;
 
 const loadTemplates = async () => {
     if (!acceptButtonTemplate) {
@@ -34,6 +35,10 @@ const loadTemplates = async () => {
     if (!acceptExactTemplate) {
         acceptExactTemplate = await Jimp.read(path.join(__dirname, 'assets', 'accept_exact_bgr.png'));
         console.log(`Loaded accept_exact_bgr.png: ${acceptExactTemplate.bitmap.width}x${acceptExactTemplate.bitmap.height}`);
+    }
+    if (!retryButtonTemplate) {
+        retryButtonTemplate = await Jimp.read(path.join(__dirname, 'assets', 'retry_button.png'));
+        console.log(`Loaded retry_button.png: ${retryButtonTemplate.bitmap.width}x${retryButtonTemplate.bitmap.height}`);
     }
 };
 
@@ -239,7 +244,34 @@ const runInputLoop = async (x, y) => {
 
             if (shouldStopLoop) break;
 
-            // Step 3: Wait 10 seconds
+            // Step 3: Check for Retry button and click if found
+            await sleep(1000); // Wait a bit for Retry button to appear
+            try {
+                await loadTemplates();
+                const screenImg = await captureScreen();
+                const retryMatch = await findTemplate(screenImg, retryButtonTemplate, 0.85);
+
+                if (retryMatch) {
+                    // Convert physical coords to logical using dpiScale
+                    const logicalX = Math.floor(retryMatch.x / dpiScale);
+                    const logicalY = Math.floor(retryMatch.y / dpiScale);
+
+                    console.log(`Retry button found at (${logicalX}, ${logicalY}) score: ${retryMatch.score.toFixed(2)}`);
+                    ioInstance?.emit('log', { message: `Clicked Retry at (${logicalX}, ${logicalY})` });
+
+                    await mouse.setPosition({ x: logicalX, y: logicalY });
+                    await mouse.leftClick();
+                    await sleep(500);
+                } else {
+                    console.log("Retry button not found, continuing...");
+                }
+            } catch (err) {
+                console.log("Retry button detection error:", err.message);
+            }
+
+            if (shouldStopLoop) break;
+
+            // Step 4: Wait 10 seconds
             console.log("Waiting 10 seconds...");
             // Check for stop every second to allow faster stopping
             for (let i = 0; i < 10; i++) {
@@ -482,10 +514,129 @@ const setDpiScale = (scale) => {
     ioInstance?.emit('log', { message: `DPI scale set to ${scale}` });
 };
 
+// Timed Loop - Click, optionally paste text, then run loop with cycle events
+const runTimedLoop = async (x, y, text) => {
+    console.log(`Starting timed loop at (${x}, ${y}), text: ${text ? 'yes' : 'no'}`);
+
+    // Stop any existing loop
+    if (isInputLoopRunning) {
+        console.log("Stopping previous loop for timed loop...");
+        shouldStopLoop = true;
+        await sleep(1000);
+    }
+
+    isInputLoopRunning = true;
+    shouldStopLoop = false;
+
+    try {
+        // Step 1: Click on position
+        if (x !== undefined && y !== undefined) {
+            await mouse.setPosition({ x, y });
+            await mouse.leftClick();
+            console.log(`Clicked at (${x}, ${y})`);
+            await sleep(300);
+        }
+
+        // Step 2: If text provided, paste it and press Enter
+        if (text && text.trim()) {
+            const base64Text = Buffer.from(text, 'utf-8').toString('base64');
+            const psCommand = `powershell -command "$str = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${base64Text}')); Set-Clipboard -Value $str"`;
+            execSync(psCommand, { encoding: 'utf-8' });
+            await keyboard.pressKey(Key.LeftControl, Key.V);
+            await keyboard.releaseKey(Key.LeftControl, Key.V);
+            console.log(`Pasted text: ${text.substring(0, 50)}...`);
+
+            await sleep(200);
+            await keyboard.pressKey(Key.Enter);
+            await keyboard.releaseKey(Key.Enter);
+            console.log("Pressed Enter");
+            await sleep(500);
+        }
+
+        ioInstance?.emit('log', { message: `Timed loop started at (${x}, ${y})` });
+
+        // Step 3: Run the loop with cycle events
+        let loopCount = 0;
+
+        while (!shouldStopLoop) {
+            loopCount++;
+            console.log(`\n=== Timed Loop Iteration ${loopCount} ===`);
+
+            // Click
+            if (x !== undefined && y !== undefined) {
+                await mouse.setPosition({ x, y });
+                await mouse.leftClick();
+                await sleep(500);
+            }
+
+            if (shouldStopLoop) break;
+
+            // Alt+Enter
+            await keyboard.pressKey(Key.LeftAlt, Key.Enter);
+            await keyboard.releaseKey(Key.LeftAlt, Key.Enter);
+
+            if (shouldStopLoop) break;
+
+            // Check for Retry/Accept buttons
+            await sleep(1000);
+            try {
+                await loadTemplates();
+                const screenImg = await captureScreen();
+
+                // Check Retry button
+                const retryMatch = await findTemplate(screenImg, retryButtonTemplate, 0.85);
+                if (retryMatch) {
+                    const logicalX = Math.floor(retryMatch.x / dpiScale);
+                    const logicalY = Math.floor(retryMatch.y / dpiScale);
+                    console.log(`Retry found at (${logicalX}, ${logicalY})`);
+                    await mouse.setPosition({ x: logicalX, y: logicalY });
+                    await mouse.leftClick();
+                    await sleep(500);
+                }
+
+                // Check Accept All button
+                const acceptMatch = await findTemplate(screenImg, acceptExactTemplate, 0.92);
+                if (acceptMatch) {
+                    const logicalX = Math.floor(acceptMatch.x / dpiScale);
+                    const logicalY = Math.floor(acceptMatch.y / dpiScale);
+                    console.log(`Accept All found at (${logicalX}, ${logicalY})`);
+                    await mouse.setPosition({ x: logicalX, y: logicalY });
+                    await mouse.leftClick();
+                    await sleep(500);
+                }
+            } catch (err) {
+                console.log("Button detection error:", err.message);
+            }
+
+            if (shouldStopLoop) break;
+
+            // Emit cycle complete for frontend countdown check
+            ioInstance?.emit('TIMED_LOOP_CYCLE', { iteration: loopCount });
+
+            // Wait 10 seconds
+            for (let i = 0; i < 10; i++) {
+                if (shouldStopLoop) break;
+                await sleep(1000);
+            }
+        }
+
+    } catch (error) {
+        console.error("Timed loop error:", error);
+        ioInstance?.emit('log', { message: `Timed loop error: ${error.message}` });
+    } finally {
+        isInputLoopRunning = false;
+        console.log("Timed loop stopped");
+        ioInstance?.emit('log', { message: "Timed loop stopped" });
+        ioInstance?.emit('TIMED_LOOP_STOPPED', {});
+    }
+};
+
 module.exports = {
     init,
     startAgent,
     setMacroMode,
+    startMacroLoop: runInputLoop, // Trigger: Click -> Loop
+    runTimedLoop, // Timed loop with text and cycle events
     typeText,
     pressKey,
     stopInputLoop,

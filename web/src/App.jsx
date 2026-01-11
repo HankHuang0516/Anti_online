@@ -38,6 +38,16 @@ function App() {
   const logEndRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
 
+  // Timed Loop State
+  const [timedLoopEnabled, setTimedLoopEnabled] = useState(false);
+  const [timerHours, setTimerHours] = useState(0);
+  const [timerMinutes, setTimerMinutes] = useState(5);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timedLoopText, setTimedLoopText] = useState('');
+  const [countdownRemaining, setCountdownRemaining] = useState(0);
+  const [isTimedLoopRunning, setIsTimedLoopRunning] = useState(false);
+  const countdownIntervalRef = useRef(null);
+
   // Helper to check if any setting mode is active
   const isSettingAnything = settingMode !== null;
 
@@ -147,6 +157,27 @@ function App() {
       addLog('Error', data.message);
     });
 
+    // Timed Loop Events
+    socket.on('TIMED_LOOP_CYCLE', (data) => {
+      // Check if countdown reached zero
+      if (countdownRemaining <= 0 && isTimedLoopRunning) {
+        // Timer expired, restart the loop
+        addLog('System', 'Timer expired, restarting timed loop...');
+        socket.emit('command', { type: 'TIMED_LOOP_START', x: dialogCoords?.x, y: dialogCoords?.y, text: timedLoopText });
+        // Reset countdown
+        const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+        setCountdownRemaining(totalSeconds);
+      }
+    });
+
+    socket.on('TIMED_LOOP_STOPPED', () => {
+      setIsTimedLoopRunning(false);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -154,6 +185,8 @@ function App() {
       socket.off('screen_update');
       socket.off('auth_result');
       socket.off('error');
+      socket.off('TIMED_LOOP_CYCLE');
+      socket.off('TIMED_LOOP_STOPPED');
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
 
@@ -245,15 +278,54 @@ function App() {
     }
   };
 
-  const toggleMacroMode = () => {
-    setMacroMode(prev => {
-      const newState = !prev;
-      if (socket) {
-        socket.emit('command', { type: newState ? 'MACRO_MODE_ON' : 'MACRO_MODE_OFF' });
-        addLog('System', `Macro Mode ${newState ? 'enabled' : 'disabled'}`);
-      }
-      return newState;
+  const handleStartMacro = () => {
+    if (!socket) return;
+    if (!dialogCoords) {
+      addLog('Error', 'Dialog position not set. Please set it in Settings first.');
+      return;
+    }
+    socket.emit('command', { type: 'MACRO_LOOP_START', x: dialogCoords.x, y: dialogCoords.y });
+    addLog('System', `Starting Macro Loop at (${dialogCoords.x}, ${dialogCoords.y})`);
+  };
+
+  const handleStartTimedLoop = (e) => {
+    e.preventDefault();
+    if (!socket) return;
+    if (!dialogCoords) {
+      addLog('Error', 'Dialog position not set. Please set it in Settings first.');
+      return;
+    }
+    if (!timedLoopEnabled) {
+      addLog('Error', 'Timed loop not enabled.');
+      return;
+    }
+
+    const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+    if (totalSeconds <= 0) {
+      addLog('Error', 'Timer must be greater than 0.');
+      return;
+    }
+
+    setCountdownRemaining(totalSeconds);
+    setIsTimedLoopRunning(true);
+
+    // Start interval locally to update UI countdown
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdownRemaining(prev => {
+        if (prev <= 0) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+
+    socket.emit('command', {
+      type: 'TIMED_LOOP_START',
+      x: dialogCoords.x,
+      y: dialogCoords.y,
+      text: timedLoopText
     });
+
+    addLog('System', `Starting Timed Loop: ${totalSeconds}s, Text: ${timedLoopText ? 'Yes' : 'No'}`);
   };
 
   const addTerminal = () => {
@@ -668,10 +740,11 @@ function App() {
                   Start Antigravity
                 </button>
                 <button
-                  onClick={toggleMacroMode}
-                  className={`w-full py-2 px-4 rounded-lg font-medium transition-all text-sm ${macroMode ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-700 hover:bg-slate-600'}`}
+                  onClick={handleStartMacro}
+                  disabled={!dialogCoords}
+                  className={`w-full py-2 px-4 rounded-lg font-medium transition-all text-sm ${!dialogCoords ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white'}`}
                 >
-                  {macroMode ? 'Macro Mode Active' : 'Enable Macro Mode'}
+                  ▶ Start Macro Loop
                 </button>
                 <button
                   onClick={() => socket.emit('command', { type: 'STOP_LOOP' })}
@@ -718,6 +791,105 @@ function App() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Timed Loop Control */}
+            <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700 backdrop-blur-sm">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-lg font-semibold text-slate-300">Timed Loop</h2>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-400 font-medium">Enable</label>
+                  <input
+                    type="checkbox"
+                    checked={timedLoopEnabled}
+                    onChange={(e) => setTimedLoopEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-offset-0 focus:ring-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {timedLoopEnabled && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {/* Timer Input */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-slate-500 uppercase font-bold text-center">Hours</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={timerHours}
+                        onChange={(e) => setTimerHours(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="bg-slate-900 border border-slate-700 rounded p-1 text-center text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-slate-500 uppercase font-bold text-center">Minutes</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={timerMinutes}
+                        onChange={(e) => setTimerMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        className="bg-slate-900 border border-slate-700 rounded p-1 text-center text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-slate-500 uppercase font-bold text-center">Seconds</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={timerSeconds}
+                        onChange={(e) => setTimerSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                        className="bg-slate-900 border border-slate-700 rounded p-1 text-center text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Text Input */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-400 font-medium">Auto-paste Text (Optional)</label>
+                    <input
+                      type="text"
+                      value={timedLoopText}
+                      onChange={(e) => setTimedLoopText(e.target.value)}
+                      placeholder="Text to paste initially..."
+                      className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none placeholder-slate-600"
+                    />
+                  </div>
+
+                  {/* Countdown Display if Running */}
+                  {isTimedLoopRunning && (
+                    <div className="text-center py-2 bg-black/30 rounded-lg border border-slate-700/50">
+                      <span className="text-xs text-slate-500 block mb-1">Time Remaining</span>
+                      <span className="text-xl font-mono font-bold text-cyan-400">
+                        {new Date(countdownRemaining * 1000).toISOString().substr(11, 8)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Start Button */}
+                  <button
+                    onClick={handleStartTimedLoop}
+                    disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
+                    className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
+                        ? 'bg-amber-600 text-white animate-pulse'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
+                      } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
+                  >
+                    {isTimedLoopRunning ? 'Running (Wait for Restart)' : '▶ Start Timed Loop'}
+                  </button>
+
+                  {isTimedLoopRunning && (
+                    <button
+                      onClick={() => socket.emit('command', { type: 'STOP_LOOP' })}
+                      className="w-full py-1 text-xs text-red-400 hover:text-red-300 underline"
+                    >
+                      Force Stop
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Remote Input with Enhanced Text Items */}
