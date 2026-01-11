@@ -21,8 +21,8 @@ const loadSettings = () => {
 function App() {
   const savedSettings = loadSettings();
 
-  // Server URL Management
-  const [serverUrl, setServerUrl] = useState(localStorage.getItem('anti_online_server_url') || 'http://localhost:3001');
+  // Server URL is now fixed to Railway Relay
+  const serverUrl = RAILWAY_AUTH_URL;
   const [socket, setSocket] = useState(null);
 
   const [connected, setConnected] = useState(false);
@@ -748,15 +748,14 @@ function App() {
           <h1 className="text-3xl font-bold text-center mb-6 bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
             Anti Online
           </h1>
-          <div className="mb-4">
+          <div className="mb-4 hidden">
             <label htmlFor="serverUrl" className="block text-sm font-medium text-slate-400 mb-1">Server URL</label>
             <input
               type="text"
               id="serverUrl"
               value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., http://localhost:3001"
+              disabled
+              className="w-full px-4 py-2 rounded-lg bg-slate-700 border border-slate-600 text-slate-500 cursor-not-allowed"
             />
           </div>
           <div className="mb-6">
@@ -775,17 +774,13 @@ function App() {
               if (socket) {
                 socket.disconnect();
               }
-              // Attempt to connect with new server URL and access code
-              localStorage.setItem('anti_online_server_url', serverUrl);
+              // Connect to Railway Relay
               const newSocket = io(serverUrl, {
                 auth: { token: accessCode },
-                transports: ['websocket', 'polling'],
-                extraHeaders: {
-                  "ngrok-skip-browser-warning": "true"
-                }
+                transports: ['websocket', 'polling']
               });
               setSocket(newSocket);
-              addLog('System', `Attempting to connect to ${serverUrl}...`);
+              addLog('System', `Connecting to Cloud Relay...`);
             }}
             className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-white shadow-lg transition-colors"
           >
