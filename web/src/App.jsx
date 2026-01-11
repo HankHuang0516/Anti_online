@@ -170,8 +170,11 @@ function App() {
         socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
         socket.emit('command', { type: 'SET_SCREEN_OFFSET', x: offsetX, y: offsetY, width: currentScreen === 0 ? 1920 : 1920, height: currentScreen === 0 ? 1200 : 1080 }); // Simplification, ideally use exact values
       } else {
-        alert('Invalid access code');
+        // Fix: Force logout on failure to prevent loop
+        alert('Invalid access code. Please try again.');
         addLog('System', 'Authentication failed');
+        setIsAuthenticated(false);
+        localStorage.removeItem('anti_online_access_token');
       }
     });
 
@@ -688,8 +691,8 @@ function App() {
                 }}
                 disabled={!connected}
                 className={`text-xs px-3 py-1.5 rounded font-bold text-white shadow-sm transition-colors ${connected
-                    ? 'bg-purple-600 hover:bg-purple-500'
-                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  ? 'bg-purple-600 hover:bg-purple-500'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed'
                   }`}
               >
                 Switch Monitor
