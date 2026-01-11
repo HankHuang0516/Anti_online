@@ -46,7 +46,7 @@ function App() {
   const [timedLoopText, setTimedLoopText] = useState('');
   const [countdownRemaining, setCountdownRemaining] = useState(0);
   const [isTimedLoopRunning, setIsTimedLoopRunning] = useState(false);
-  const countdownIntervalRef = useRef(null);
+  const isRestartingRef = useRef(false); // Flag to ignore STOPPED event during restart
 
   // Helper to check if any setting mode is active
   const isSettingAnything = settingMode !== null;
@@ -158,24 +158,20 @@ function App() {
     });
 
     // Timed Loop Events
+    // Timed Loop Events
     socket.on('TIMED_LOOP_CYCLE', (data) => {
-      // Check if countdown reached zero
-      if (countdownRemaining <= 0 && isTimedLoopRunning) {
-        // Timer expired, restart the loop
-        addLog('System', 'Timer expired, restarting timed loop...');
-        socket.emit('command', { type: 'TIMED_LOOP_START', x: dialogCoords?.x, y: dialogCoords?.y, text: timedLoopText });
-        // Reset countdown
-        const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
-        setCountdownRemaining(totalSeconds);
-      }
+      // Just log or update status, do NOT restart here anymore as per new flow
+      // console.log("Backend cycle complete", data);
     });
 
     socket.on('TIMED_LOOP_STOPPED', () => {
-      setIsTimedLoopRunning(false);
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
+      // If we are in the middle of a restart, ignore this stop event
+      if (isRestartingRef.current) {
+        isRestartingRef.current = false;
+        console.log("Ignoring TIMED_LOOP_STOPPED during restart");
+        return;
       }
+      setIsTimedLoopRunning(false);
     });
 
     return () => {
@@ -189,6 +185,44 @@ function App() {
       socket.off('TIMED_LOOP_STOPPED');
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
+
+  // Frontend-driven Timed Loop Restart Logic
+  useEffect(() => {
+    if (isTimedLoopRunning && countdownRemaining <= 0) {
+      // Timer hit zero -> Restart immediately
+      addLog('System', 'Timer expired, triggering next loop cycle...');
+
+      // Set flag to ignore the STOPPED event from the previous loop
+      isRestartingRef.current = true;
+
+      socket.emit('command', {
+        type: 'TIMED_LOOP_START',
+        x: dialogCoords?.x,
+        y: dialogCoords?.y,
+        text: timedLoopText
+      });
+
+      // Reset countdown
+      const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+      setCountdownRemaining(totalSeconds);
+    }
+  }, [countdownRemaining, isTimedLoopRunning, dialogCoords, timedLoopText, timerHours, timerMinutes, timerSeconds, socket]);
+
+  // Timer Countdown Logic
+  useEffect(() => {
+    let interval = null;
+    if (isTimedLoopRunning) {
+      interval = setInterval(() => {
+        setCountdownRemaining(prev => {
+          if (prev <= 0) return 0;
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimedLoopRunning]);
 
   const handleAuth = (e) => {
     e.preventDefault();
@@ -308,15 +342,7 @@ function App() {
 
     setCountdownRemaining(totalSeconds);
     setIsTimedLoopRunning(true);
-
-    // Start interval locally to update UI countdown
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-    countdownIntervalRef.current = setInterval(() => {
-      setCountdownRemaining(prev => {
-        if (prev <= 0) return 0;
-        return prev - 1;
-      });
-    }, 1000);
+    isRestartingRef.current = false; // Reset flag on manual start
 
     socket.emit('command', {
       type: 'TIMED_LOOP_START',
@@ -873,8 +899,8 @@ function App() {
                     onClick={handleStartTimedLoop}
                     disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
                     className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
-                        ? 'bg-amber-600 text-white animate-pulse'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
+                      ? 'bg-amber-600 text-white animate-pulse'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
                       } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
                   >
                     {isTimedLoopRunning ? 'Running (Wait for Restart)' : '▶ Start Timed Loop'}

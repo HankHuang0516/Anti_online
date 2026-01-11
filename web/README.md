@@ -138,24 +138,19 @@ handleStartTimedLoop()
     ├─► 發送 TIMED_LOOP_START {x, y, text}
     ├─► 啟動前端倒數計時器
     │
-    ↓ Server
+    ↓ Server (發送新的指令)
     │
     └─► runTimedLoop(x, y, text)
             │
             ├─► 點擊 (x, y)
             ├─► 如有文字: 貼上 + Enter
             │
-            └─► runInputLoop [背景]
+            └─► runInputLoop [背景] (Break條件: Server有新指令時)
                     │
                     └─► 每 10 秒循環：
                           點擊Remote → Alt+Enter → 檢測/點擊 Retry/Accept
-                          │
-                          └─► emit('TIMED_LOOP_CYCLE')
-                                    │
-                                    ↓ Frontend
-                                    │
-                                    └─► 檢查倒數
-                                          │
-                                          ├─► 未歸零: 繼續
-                                          └─► 歸零: emit('TIMED_LOOP_START') 重啟
+    │
+    ↓ Frontend Timer (倒數歸零)
+    │
+    └─► emit('TIMED_LOOP_START') 重啟 → Server 收到後中斷當前 Loop 並重新開始
 ```
