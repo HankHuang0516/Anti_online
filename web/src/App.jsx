@@ -518,10 +518,9 @@ function App() {
       return;
     }
     socket.emit('command', {
-      type: 'TIMED_LOOP_START',
+      type: 'MACRO_LOOP_START',
       x: dialogCoords.x,
-      y: dialogCoords.y,
-      text: timedLoopText
+      y: dialogCoords.y
     });
     addLog('System', `Starting Macro Loop at (${dialogCoords.x}, ${dialogCoords.y})`);
   };
