@@ -50,9 +50,9 @@ const initDB = async () => {
     }
 };
 
-if (DATABASE_URL) {
-    initDB();
-}
+// if (DATABASE_URL) {  <-- Removed redundant call
+//     initDB();
+// }
 
 // REST Endpoints
 app.post('/verify', (req, res) => {
@@ -113,6 +113,31 @@ let sharedState = {
         originalDuration: 0
     }
 };
+
+// Initialize Shared State from DB
+const initSharedState = async () => {
+    if (!DATABASE_URL) return;
+    try {
+        const client = await pool.connect();
+        const result = await client.query('SELECT data FROM user_settings WHERE id = 1');
+        client.release();
+
+        const savedData = result.rows[0]?.data || {};
+        if (savedData.timedLoopText) {
+            sharedState.timedLoopText = savedData.timedLoopText;
+        }
+        if (savedData.timedLoopEnabled !== undefined) {
+            sharedState.timedLoopEnabled = savedData.timedLoopEnabled;
+        }
+        console.log("Shared State initialized from DB:", sharedState);
+    } catch (err) {
+        console.error('Error loading shared state:', err);
+    }
+};
+
+if (DATABASE_URL) {
+    initDB().then(initSharedState);
+}
 
 io.on('connection', (socket) => {
     const auth = socket.handshake.auth || {};

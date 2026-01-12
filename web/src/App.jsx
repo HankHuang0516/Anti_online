@@ -83,10 +83,12 @@ function App() {
       dpiScale,
       offsetX,
       offsetY,
-      currentScreen
+      currentScreen,
+      timedLoopText, // Persist this
+      timedLoopEnabled // Persist this too if desired, but user asked for text
     };
     localStorage.setItem('anti_online_settings', JSON.stringify(settings));
-  }, [dialogCoords, terminals, textItems, dpiScale, offsetX, offsetY, currentScreen]);
+  }, [dialogCoords, terminals, textItems, dpiScale, offsetX, offsetY, currentScreen, timedLoopText, timedLoopEnabled]);
 
   // Text Item Handlers
   const addTextItem = () => {
