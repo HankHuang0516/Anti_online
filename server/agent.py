@@ -1,6 +1,6 @@
 import sys
-import json
 import time
+import json
 import base64
 import threading
 import io
@@ -286,11 +286,11 @@ def input_loop():
                 continue
             cmd = json.loads(line)
             handle_command(cmd)
-        except Exception:
-            pass
+        except Exception as e:
+            sys.stderr.write(f"Input Loop Error: {e}\n")
 
 def handle_command(cmd):
-    global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, MONITOR_CHANGE_PENDING, AUTO_ACCEPT_RUNNING, AUTO_ACCEPT_THREAD
+    global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, MONITOR_CHANGE_PENDING, AUTO_ACCEPT_RUNNING, AUTO_ACCEPT_THREAD, LOOP_RUNNING, LOOP_THREAD, LOOP_PARAMS
     
     ctype = cmd.get('type')
     # sys.stderr.write(f"Agent processing command: {ctype}\n") # DEBUG LOG - Keep stderr for local debug

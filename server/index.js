@@ -100,6 +100,10 @@ const startPythonAgent = () => {
         });
     });
 
+    pyProcess.on('error', (err) => {
+        console.error("Failed to start Python process:", err);
+    });
+
     pyProcess.on('close', (code) => {
         console.log(`Python agent exited with code ${code}`);
         // Restart?
@@ -135,6 +139,7 @@ socket.on("command", (data) => {
     if (pyProcess && pyProcess.stdin) {
         // Forward to Python
         try {
+            console.log("Writing to Python Stdin...");
             pyProcess.stdin.write(JSON.stringify(data) + "\n");
         } catch (e) {
             console.error("Failed to write to python stdin", e);

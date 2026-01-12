@@ -162,10 +162,19 @@ function App() {
     });
 
     socket.on('log', (data) => {
-      addLog(data.source || 'Server', data.message);
+      const msg = data.message || '';
+      addLog(data.source || 'Server', msg);
+
+      // Synced Host Status from Server Logs
+      if (msg.includes('Host disconnected')) {
+        setIsHostConnected(false);
+      } else if (msg.includes('Host connected')) {
+        setIsHostConnected(true);
+      }
+
       // Sync Monitor State from Server Logs
-      if (data.message && data.message.includes('Switched to Monitor')) {
-        const match = data.message.match(/Switched to Monitor (\d+)/);
+      if (msg.includes('Switched to Monitor')) {
+        const match = msg.match(/Switched to Monitor (\d+)/);
         if (match && match[1]) {
           setCurrentScreen(parseInt(match[1]));
         }

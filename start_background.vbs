@@ -9,6 +9,6 @@ UrlPath = ProjectDir & "\url.txt"
 
 ' 1. Start Server (Hidden)
 ' We navigate explicitly to the ProjectDir\server folder
-WshShell.Run "cmd /c ""cd /d " & ProjectDir & "\server && npm start > " & LogPath & " 2>&1""", 0, False
+WshShell.Run "cmd /c ""cd /d " & ProjectDir & "\server && node_bg.exe index.js > " & LogPath & " 2>&1""", 0, False
 
 
