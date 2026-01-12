@@ -86,7 +86,10 @@ const startPythonAgent = () => {
                 } else if (msg.type === 'log') {
                     console.log("[PY]", msg.message);
                     if (isConnected) {
+                        console.log("-> Relaying log to Cloud...");
                         socket.emit("log", { message: msg.message });
+                    } else {
+                        console.warn("-> Cannot relay log: Disconnected");
                     }
                 }
             } catch (e) {

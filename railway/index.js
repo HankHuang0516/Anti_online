@@ -193,6 +193,7 @@ io.on('connection', (socket) => {
 
         // Relay Events from Viewer -> Host
         socket.on('command', (data) => {
+            console.log(`[RELAY] Viewer sent command: ${data.type}`); // DEBUG LOG
             io.to('host').emit('command', data);
         });
 

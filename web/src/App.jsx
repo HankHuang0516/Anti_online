@@ -1125,8 +1125,14 @@ function App() {
                   <button
                     onClick={(e) => {
                       e.preventDefault();
-                      if (!socket || !dialogCoords) return;
                       const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+                      addLog('System', `DEBUG: Sending START command (Text: ${timedLoopText}, Timer: ${totalSeconds}s)`); // DEBUG LOG
+                      socket.emit('command', {
+                        type: 'TIMED_LOOP_START',
+                        x: dialogCoords?.x,
+                        y: dialogCoords?.y,
+                        text: timedLoopText
+                      });
                       socket.emit('timer_action', { action: 'start', duration: totalSeconds });
                     }}
                     disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
