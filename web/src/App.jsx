@@ -282,7 +282,16 @@ function App() {
             if (data.dpiScale) setDpiScale(data.dpiScale);
             if (data.offsetX !== undefined) setOffsetX(data.offsetX);
             if (data.offsetY !== undefined) setOffsetY(data.offsetY);
+            if (data.offsetX !== undefined) setOffsetX(data.offsetX);
+            if (data.offsetY !== undefined) setOffsetY(data.offsetY);
             if (data.currentScreen !== undefined) setCurrentScreen(data.currentScreen);
+
+            // Restore Timed Loop Config
+            if (data.timerHours !== undefined) setTimerHours(data.timerHours);
+            if (data.timerMinutes !== undefined) setTimerMinutes(data.timerMinutes);
+            if (data.timerSeconds !== undefined) setTimerSeconds(data.timerSeconds);
+            if (data.timedLoopText !== undefined) setTimedLoopText(data.timedLoopText);
+
             addLog('System', 'Settings loaded from cloud');
           }
         })
@@ -303,7 +312,13 @@ function App() {
         dpiScale,
         offsetX,
         offsetY,
-        currentScreen
+        currentScreen,
+        // Timed Loop Synced Support
+        timerHours,
+        timerMinutes,
+        timerSeconds,
+        timedLoopText,
+        // timedLoopEnabled  <-- Maybe don't sync this, or user starts loop on load? Let's just sync config.
       };
 
       const code = accessCodeRef.current;
