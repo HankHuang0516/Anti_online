@@ -153,6 +153,13 @@ function App() {
 
     socket.on('log', (data) => {
       addLog('Server', data.message);
+      // Sync Monitor State from Server Logs
+      if (data.message && data.message.includes('Switched to Monitor')) {
+        const match = data.message.match(/Switched to Monitor (\d+)/);
+        if (match && match[1]) {
+          setCurrentScreen(parseInt(match[1]));
+        }
+      }
     });
 
     socket.on('screen_update', (data) => {
@@ -168,7 +175,11 @@ function App() {
         addLog('System', 'Authentication successful');
         // Resend settings after auth
         socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
-        socket.emit('command', { type: 'SET_SCREEN_OFFSET', x: offsetX, y: offsetY, width: currentScreen === 0 ? 1920 : 1920, height: currentScreen === 0 ? 1200 : 1080 }); // Simplification, ideally use exact values
+        socket.emit('command', { type: 'SET_SCREEN_OFFSET', x: offsetX, y: offsetY });
+        // Restore Monitor Selection
+        if (currentScreen) {
+          socket.emit('command', { type: 'SET_MONITOR', index: currentScreen });
+        }
       } else {
         // Fix: Force logout on failure to prevent loop
         alert('Invalid access code. Please try again.');
