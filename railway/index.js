@@ -103,6 +103,16 @@ app.get('/', (req, res) => {
 
 // --- SOCKET.IO RELAY LOGIC ---
 
+// In-Memory Shared State
+let sharedState = {
+    timedLoopText: '',
+    timer: {
+        running: false,
+        endTime: 0,
+        originalDuration: 0
+    }
+};
+
 io.on('connection', (socket) => {
     const auth = socket.handshake.auth || {};
     const token = auth.token;
@@ -117,6 +127,35 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('auth_result', { success: true });
+
+    // 2. Send Initial State
+    socket.emit('state_sync', sharedState);
+
+    // 3. Handle Updates
+    socket.on('update_text', (text) => {
+        sharedState.timedLoopText = text;
+        // Broadcast to all including sender (simple consistency)
+        io.emit('text_updated', { text });
+    });
+
+    socket.on('timer_action', (data) => {
+        // data: { action: 'start'|'stop', duration: sec }
+        if (data.action === 'start') {
+            const now = Date.now();
+            sharedState.timer = {
+                running: true,
+                endTime: now + (data.duration * 1000),
+                originalDuration: data.duration
+            };
+        } else if (data.action === 'stop') {
+            sharedState.timer = {
+                running: false,
+                endTime: 0,
+                originalDuration: 0
+            };
+        }
+        io.emit('timer_updated', sharedState.timer);
+    });
 
     // 2. Role Assignment
     if (role === 'host') {
@@ -149,12 +188,6 @@ io.on('connection', (socket) => {
         // Relay Events from Viewer -> Host
         socket.on('command', (data) => {
             io.to('host').emit('command', data);
-        });
-
-        // Real-time Sync between Viewers (Text, Timer, etc.)
-        socket.on('sync_state', (data) => {
-            // Broadcast to all other viewers (excluding sender)
-            socket.broadcast.to('viewer').emit('state_sync', data);
         });
 
         socket.on('disconnect', () => {
