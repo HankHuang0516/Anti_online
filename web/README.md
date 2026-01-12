@@ -136,30 +136,48 @@ startMonitoring() [自動啟動]
               └─► emit('screen_update') → 傳送至 Web UI
 ```
 
-### 9. Timed Loop (倒數計時循環)
+### 9. Timed Loop (倒數計時循環 - 持續性背景執行)
+### 9. Timed Loop (倒數計時循環 - 持續性背景執行)
 ```
-Timed Loop 按鈕
+Timed Loop 按鈕 (Frontend Web)
     │
     ▼
 handleStartTimedLoop()
     │
-    ├─► 檢查 dialogCoords, timedLoopEnabled
-    ├─► 發送 TIMED_LOOP_START {x, y, text}
-    ├─► 啟動前端倒數計時器
+    ├─► 檢查設定 & 發送指令: TIMED_LOOP_START {x, y, text}
     │
-    ↓ Server (發送新的指令)
+    ↓ Railway Server (中繼站)
     │
-    └─► runTimedLoop(x, y, text)
+    ├─► 啟動 Railway 計時器 (例如 30s) —— 倒數歸零時觸發
+    └─► 轉發指令給 Local Agent
             │
-            ├─► 點擊 (x, y)
-            ├─► 如有文字: 貼上 + Enter
+            ▼
+    Local Agent (Python 本機)
             │
-            └─► runInputLoop [背景] (Break條件: Server有新指令時)
+            ├─► **立即執行**:
+            │     1. 點擊 Remote (x, y)
+            │     2. 貼上文字 + Enter (如有設定)
+            │
+            ├─► 檢查: 背景執行緒是否運行中?
+            │     │
+            │     ├─► 否: 啟動 [背景執行緒 loop_worker]
+            │     │
+            │     └─► 是: 僅更新參數，不重複啟動
+            │
+            ▼
+    [背景執行緒 loop_worker] (獨立運作)
+            │
+            └─► 每 10 秒固定循環 (只做動作，不貼文字)：
+                  1. 點擊 Remote (x, y)
+                  2. 按下 Alt + Enter
+                  3. 偵測並點擊 Retry 按鈕 (如有)
+                  4. 偵測並點擊 Accept 按鈕 (如有)
+
+    ↓ 前端按下停止 (Stop Button)
+    │
+    └─► 發送 timer_action: stop
+            │
+            └─► Railway 轉發 STOP_LOOP 指令
                     │
-                    └─► 每 10 秒循環：
-                          點擊Remote → Alt+Enter → 檢測/點擊 Retry/Accept
-    │
-    ↓ Frontend Timer (倒數歸零)
-    │
-    └─► emit('TIMED_LOOP_START') 重啟 → Server 收到後中斷當前 Loop 並重新開始
+                    └─► Agent 收到後立即終止 [背景執行緒]
 ```

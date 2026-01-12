@@ -215,33 +215,27 @@ def loop_worker():
     
     while LOOP_RUNNING:
         try:
-            # 1. Execute Action
+            # 1. Execute Background Actions Only (Click -> Alt+Enter -> Buttons)
+            # NOTE: Paste Text is now handled ONLY by the Railway Trigger in handle_command
+            
             x = LOOP_PARAMS.get('x')
             y = LOOP_PARAMS.get('y')
-            text = LOOP_PARAMS.get('text')
             
-            send_log(f"Loop Cycle Execution... (Text: {'Yes' if text else 'No'})")
+            send_log(f"Loop Cycle Execution...")
             
+            # Step 1: Click Remote
             if x is not None and y is not None:
                  real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
                  real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
                  pyautogui.click(x=real_x, y=real_y)
                  time.sleep(0.5)
 
-            if text:
-                copy_to_clipboard(text)
-                time.sleep(0.1)
-                pyautogui.hotkey('ctrl', 'v')
-                time.sleep(0.1)
-                pyautogui.press('enter')
-                # send_log(f"Loop pasted text") # Reduce noise
-                
-            # Always press Alt+Enter as per original requirement
+            # Step 2: Alt+Enter
             time.sleep(0.5)
             pyautogui.hotkey('alt', 'enter')
             send_log("Loop Action: Alt+Enter")
 
-            # Check for Retry Button
+            # Step 3: Check for Retry Button
             time.sleep(1.0)
             match = find_template('retry_button.png', threshold=0.85)
             if match:
@@ -251,7 +245,7 @@ def loop_worker():
                 send_log("Retry detected & clicked")
                 time.sleep(0.5)
             
-            # Check for Accept All Button
+            # Step 4: Check for Accept All Button
             time.sleep(0.5)
             match = find_template('accept_exact_bgr.png', threshold=0.92)
             if match:
@@ -260,7 +254,7 @@ def loop_worker():
                 pyautogui.click(x=ax, y=ay)
                 send_log("Accept All detected & clicked")
             
-            # 2. Wait 10 seconds (responsive sleep)
+            # Wait 10 seconds
             for _ in range(100): # 100 * 0.1s = 10s
                 if not LOOP_RUNNING: break
                 time.sleep(0.1)
@@ -351,10 +345,28 @@ def handle_command(cmd):
         y = cmd.get('y')
         text = cmd.get('text')
         
-        # Update Parameters
+        send_log("New Trigger Received: Executing Immediate Action & Updating Loop")
+
+        # 1. IMMEDIATE ACTION: Click + Paste Text (On Railway Trigger)
+        if x is not None and y is not None:
+             real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
+             real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
+             pyautogui.click(x=real_x, y=real_y)
+             time.sleep(0.5)
+
+        if text:
+            copy_to_clipboard(text)
+            time.sleep(0.1)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(0.1)
+            pyautogui.press('enter')
+            send_log(f"Trigger Action: Text Pasted")
+
+        # 2. UPDATE BACKGROUND LOOP
+        # Loop will handle: Click -> Alt+Enter -> Buttons (Every 10s)
         LOOP_PARAMS['x'] = x
         LOOP_PARAMS['y'] = y
-        LOOP_PARAMS['text'] = text
+        # LOOP_PARAMS['text'] = text # Text is no longer used in loop_worker
         
         if not LOOP_RUNNING:
             LOOP_RUNNING = True
