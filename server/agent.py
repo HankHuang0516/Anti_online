@@ -38,6 +38,11 @@ MONITOR_CHANGE_PENDING = False
 AUTO_ACCEPT_RUNNING = False
 AUTO_ACCEPT_THREAD = None
 
+# Persistent Timed Loop State
+LOOP_RUNNING = False
+LOOP_THREAD = None
+LOOP_PARAMS = {"x": None, "y": None, "text": None}
+
 # Force UTF-8 for stdin/stdout to handle Chinese characters correctly
 if sys.platform == 'win32':
     sys.stdin.reconfigure(encoding='utf-8')
@@ -202,6 +207,76 @@ def capture_loop():
             sys.stderr.write(f"Critical Sct Error: {e}\n")
             time.sleep(1)
 
+# Timed Loop Worker
+def loop_worker():
+    global LOOP_RUNNING, LOOP_PARAMS, OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, DPI_SCALE
+    
+    send_log("Background Loop Worker Started (10s interval)")
+    
+    while LOOP_RUNNING:
+        try:
+            # 1. Execute Action
+            x = LOOP_PARAMS.get('x')
+            y = LOOP_PARAMS.get('y')
+            text = LOOP_PARAMS.get('text')
+            
+            send_log(f"Loop Cycle Execution... (Text: {'Yes' if text else 'No'})")
+            
+            if x is not None and y is not None:
+                 real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
+                 real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
+                 pyautogui.click(x=real_x, y=real_y)
+                 time.sleep(0.5)
+
+            if text:
+                copy_to_clipboard(text)
+                time.sleep(0.1)
+                pyautogui.hotkey('ctrl', 'v')
+                time.sleep(0.1)
+                pyautogui.press('enter')
+                # send_log(f"Loop pasted text") # Reduce noise
+                
+            # Always press Alt+Enter as per original requirement
+            time.sleep(0.5)
+            pyautogui.hotkey('alt', 'enter')
+            send_log("Loop Action: Alt+Enter")
+
+            # Check for Retry Button
+            time.sleep(1.0)
+            match = find_template('retry_button.png', threshold=0.85)
+            if match:
+                rx, ry, score = match
+                sys.stderr.write(f"Retry button found at ({rx}, {ry})\n")
+                pyautogui.click(x=rx, y=ry)
+                send_log("Retry detected & clicked")
+                time.sleep(0.5)
+            
+            # Check for Accept All Button
+            time.sleep(0.5)
+            match = find_template('accept_exact_bgr.png', threshold=0.92)
+            if match:
+                ax, ay, score = match
+                sys.stderr.write(f"Accept All found at ({ax}, {ay})\n")
+                pyautogui.click(x=ax, y=ay)
+                send_log("Accept All detected & clicked")
+            
+            # 2. Wait 10 seconds (responsive sleep)
+            for _ in range(100): # 100 * 0.1s = 10s
+                if not LOOP_RUNNING: break
+                time.sleep(0.1)
+                
+        except Exception as e:
+            sys.stderr.write(f"Loop Worker Error: {e}\n")
+            time.sleep(1.0)
+
+    send_log("Background Loop Worker Stopped")
+
+
+# Helper to send log (Global)
+def send_log(msg):
+    print(json.dumps({"type": "log", "message": msg}))
+    sys.stdout.flush()
+
 def input_loop():
     """Reads commands from stdin"""
     for line in sys.stdin:
@@ -220,11 +295,6 @@ def handle_command(cmd):
     ctype = cmd.get('type')
     # sys.stderr.write(f"Agent processing command: {ctype}\n") # DEBUG LOG - Keep stderr for local debug
     
-    # Helper to send log
-    def send_log(msg):
-        print(json.dumps({"type": "log", "message": msg}))
-        sys.stdout.flush()
-
     if ctype == 'SWITCH_MONITOR':
         MONITOR_CHANGE_PENDING = True
         send_log("Switching Monitor...")
@@ -240,11 +310,13 @@ def handle_command(cmd):
         x = cmd.get('x')
         y = cmd.get('y')
         if x is not None and y is not None:
-            # Apply Scaling + Offset
-            real_x = int(x * SCALE_X) + OFFSET_X
-            real_y = int(y * SCALE_Y) + OFFSET_Y
+            # Apply Scaling + Offset + DPI
+            # x is "Logical Preview Pixel" (PreviewPixel / DPI)
+            # We need Physical Screen Pixel: x * DPI * SCALE
+            real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
+            real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
             pyautogui.click(x=real_x, y=real_y)
-            send_log(f"Clicked at ({x}, {y})")
+            send_log(f"Clicked at ({real_x}, {real_y}) [Log: {x},{y}]")
             
     elif ctype == 'INPUT_TEXT':
         text = cmd.get('text')
@@ -254,8 +326,8 @@ def handle_command(cmd):
         
         if x is not None and y is not None:
              # Click to focus
-             real_x = int(x * SCALE_X) + OFFSET_X
-             real_y = int(y * SCALE_Y) + OFFSET_Y
+             real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
+             real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
              pyautogui.click(x=real_x, y=real_y)
              time.sleep(0.5) # Wait for UI focus
 
@@ -274,62 +346,27 @@ def handle_command(cmd):
             send_log(f"Pressed key: {key}")
 
     elif ctype == 'TIMED_LOOP_START' or ctype == 'MACRO_LOOP_START':
-        # One-shot execution triggering
+        # Start or Update Background Loop
         x = cmd.get('x')
         y = cmd.get('y')
         text = cmd.get('text')
         
-        send_log("Starting Timed/Macro Loop Sequence...")
-
-        if x is not None and y is not None:
-             real_x = int(x * SCALE_X) + OFFSET_X
-             real_y = int(y * SCALE_Y) + OFFSET_Y
-             pyautogui.click(x=real_x, y=real_y)
-             time.sleep(0.5)
-
-        if text:
-            copy_to_clipboard(text)
-            time.sleep(0.1)
-            pyautogui.hotkey('ctrl', 'v')
-            time.sleep(0.1)
-            pyautogui.press('enter')
-            send_log(f"Loop pasted text: {text}")
-            
-        # Always press Alt+Enter as per original requirement
-        time.sleep(0.5)
-        pyautogui.hotkey('alt', 'enter')
-        send_log("Pressed Alt+Enter")
-
-        # Check for Retry Button
-        time.sleep(1.0)
-        match = find_template('retry_button.png', threshold=0.85)
-        if match:
-            rx, ry, score = match
-            sys.stderr.write(f"Retry button found at ({rx}, {ry})\n")
-            pyautogui.click(x=rx, y=ry)
-            send_log("Retry button found and clicked.")
+        # Update Parameters
+        LOOP_PARAMS['x'] = x
+        LOOP_PARAMS['y'] = y
+        LOOP_PARAMS['text'] = text
+        
+        if not LOOP_RUNNING:
+            LOOP_RUNNING = True
+            LOOP_THREAD = threading.Thread(target=loop_worker, daemon=True)
+            LOOP_THREAD.start()
+            send_log("Starting Persistent Loop Thread...")
         else:
-            send_log("Retry button not found (Success?).")
-    
-    elif ctype == 'AUTO_ACCEPT_START':
-        if not AUTO_ACCEPT_RUNNING:
-            AUTO_ACCEPT_RUNNING = True
-            AUTO_ACCEPT_THREAD = threading.Thread(target=auto_accept_loop, daemon=True)
-            AUTO_ACCEPT_THREAD.start()
-            send_log("Auto Accept Started")
-            
-    elif ctype == 'AUTO_ACCEPT_STOP':
-        AUTO_ACCEPT_RUNNING = False
-        send_log("Auto Accept Stopped")
-
-    elif ctype == 'SET_DPI_SCALE':
-        scale = cmd.get('scale', 1.0)
-        DPI_SCALE = float(scale)
-        send_log(f"DPI Scale set to {DPI_SCALE}")
+            send_log("Updated Running Loop Parameters")
 
     elif ctype == 'STOP_LOOP':
-        # Python agent handles one-shot tasks, so stop is mostly for logic reset or logging
-        send_log("Received STOP_LOOP command")
+        LOOP_RUNNING = False
+        send_log("Stopping Loop Thread...")
         
     elif ctype == 'RESTART_TERMINAL':
         # logic: click -> wait 1s -> ctrl+c -> wait 2s -> paste command -> wait 1s -> enter
@@ -339,8 +376,8 @@ def handle_command(cmd):
         
         if x is not None and y is not None and command:
             send_log(f"Restarting Terminal with command: {command}")
-            real_x = int(x * SCALE_X) + OFFSET_X
-            real_y = int(y * SCALE_Y) + OFFSET_Y
+            real_x = int(x * DPI_SCALE * SCALE_X) + OFFSET_X
+            real_y = int(y * DPI_SCALE * SCALE_Y) + OFFSET_Y
             
             # 1. Click Terminal
             pyautogui.click(x=real_x, y=real_y)

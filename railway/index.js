@@ -237,6 +237,14 @@ io.on('connection', (socket) => {
                 endTime: 0,
                 originalDuration: 0
             };
+            // Propagate Stop to Host (Agent)
+            if (hostSocketId) {
+                io.to('host').emit('command', { type: 'STOP_LOOP' });
+                io.to('viewer').emit('log', { message: '[Server] Sent STOP_LOOP to Agent' });
+            } else {
+                console.log("[LOOP] Host offline. Queuing STOP_LOOP...");
+                commandQueue.push({ type: 'STOP_LOOP' });
+            }
         }
         io.emit('timer_updated', sharedState.timer);
     });
