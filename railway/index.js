@@ -114,6 +114,9 @@ let sharedState = {
     }
 };
 
+let commandQueue = []; // Queue for pending commands when Host is offline
+let hostSocketId = null; // Track active host socket
+
 // Initialize Shared State from DB
 const initSharedState = async () => {
     if (!DATABASE_URL) return;
