@@ -477,7 +477,12 @@ function App() {
       addLog('Error', 'Dialog position not set. Please set it in Settings first.');
       return;
     }
-    socket.emit('command', { type: 'TIMED_LOOP_START', x: dialogCoords.x, y: dialogCoords.y });
+    socket.emit('command', {
+      type: 'TIMED_LOOP_START',
+      x: dialogCoords.x,
+      y: dialogCoords.y,
+      text: timedLoopText
+    });
     addLog('System', `Starting Macro Loop at (${dialogCoords.x}, ${dialogCoords.y})`);
   };
 
