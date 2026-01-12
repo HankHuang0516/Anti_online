@@ -11,9 +11,12 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allow all origins for simplicity/demo
+        origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    pingTimeout: 60000, // Increase to 60s
+    pingInterval: 25000,
+    transports: ['websocket', 'polling'] // Explicit
 });
 
 const PORT = process.env.PORT || 3000;

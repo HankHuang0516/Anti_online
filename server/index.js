@@ -16,6 +16,7 @@ const socket = io(RAILWAY_URL, {
         role: "host"
     },
     reconnectionDelayMax: 10000,
+    transports: ['websocket'] // Force WebSocket for stability
 });
 
 let isConnected = false;
