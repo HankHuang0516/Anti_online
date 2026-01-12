@@ -39,9 +39,7 @@ function App() {
   const [isSynced, setIsSynced] = useState(true); // Indicator for cloud sync status
 
   // Ref to keep track of latest accessCode without re-triggering socket effect
-  const accessCodeRef = useRef(accessCode); // For usage in closures
-  const isRemoteUpdate = useRef(false); // For breaking sync loops
-
+  const accessCodeRef = useRef(accessCode);
   useEffect(() => {
     accessCodeRef.current = accessCode;
   }, [accessCode]);
@@ -60,6 +58,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   // Timed Loop State
+  const [endTime, setEndTime] = useState(0);
   const [timedLoopEnabled, setTimedLoopEnabled] = useState(false);
   const [timerHours, setTimerHours] = useState(0);
   const [timerMinutes, setTimerMinutes] = useState(5);
@@ -164,26 +163,6 @@ function App() {
       }
     });
 
-    socket.on('state_sync', (data) => {
-      // Receive updates from other clients
-      isRemoteUpdate.current = true; // Flag to prevent re-emission
-      if (data.type === 'text_update') {
-        if (data.timedLoopText !== undefined) setTimedLoopText(data.timedLoopText);
-        if (data.timerHours !== undefined) setTimerHours(data.timerHours);
-        if (data.timerMinutes !== undefined) setTimerMinutes(data.timerMinutes);
-        if (data.timerSeconds !== undefined) setTimerSeconds(data.timerSeconds);
-      } else if (data.type === 'timer_start') {
-        // Sync Timer Start
-        setIsTimedLoopRunning(true);
-        setCountdownRemaining(data.duration);
-        addLog('System', 'Timer started by remote user');
-      } else if (data.type === 'timer_stop') {
-        setIsTimedLoopRunning(false);
-        setCountdownRemaining(0);
-        addLog('System', 'Timer stopped by remote user');
-      }
-    });
-
     socket.on('screen_update', (data) => {
       setScreenImage(`data:image/jpeg;base64,${data.image}`);
     });
@@ -222,14 +201,33 @@ function App() {
       // console.log("Backend cycle complete", data);
     });
 
-    socket.on('TIMED_LOOP_STOPPED', () => {
-      // If we are in the middle of a restart, ignore this stop event
-      if (isRestartingRef.current) {
-        isRestartingRef.current = false;
-        console.log("Ignoring TIMED_LOOP_STOPPED during restart");
-        return;
+    // --- REAL TEME SYNC LISTENERS ---
+    socket.on('state_sync', (state) => {
+      if (state.timedLoopText) setTimedLoopText(state.timedLoopText);
+      if (state.timer.running) {
+        setIsTimedLoopRunning(true);
+        setEndTime(state.timer.endTime);
+      } else {
+        setIsTimedLoopRunning(false);
+        setCountdownRemaining(0);
       }
-      setIsTimedLoopRunning(false);
+    });
+
+    socket.on('text_updated', (data) => {
+      setTimedLoopText(data.text);
+    });
+
+    socket.on('timer_updated', (timer) => {
+      if (timer.running) {
+        setIsTimedLoopRunning(true);
+        setEndTime(timer.endTime);
+        // Also restore duration to inputs if needed? (User preference)
+        // setTimerSeconds(timer.originalDuration % 60);
+        // etc... maybe skip to avoid overwriting user input
+      } else {
+        setIsTimedLoopRunning(false);
+        setCountdownRemaining(0);
+      }
     });
 
     return () => {
@@ -239,19 +237,19 @@ function App() {
       socket.off('screen_update');
       socket.off('auth_result');
       socket.off('error');
-      socket.off('TIMED_LOOP_CYCLE');
-      socket.off('TIMED_LOOP_STOPPED');
+      socket.off('state_sync');
+      socket.off('text_updated');
+      socket.off('timer_updated');
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
 
   // Frontend-driven Timed Loop Restart Logic
   useEffect(() => {
     if (isTimedLoopRunning && countdownRemaining <= 0) {
-      // Timer hit zero -> Restart immediately
-      addLog('System', 'Timer expired, triggering next loop cycle...');
-
-      // Set flag to ignore the STOPPED event from the previous loop
-      isRestartingRef.current = true;
+      // Only trigger if we are "close" to zero (within 1s) to avoid double firing on old state
+      // Actually, simplified: If it hits zero, WE EMIT THE COMMAND.
+      // The server doesn't auto-stop. We stay "Running".
+      // We emit command -> Wait -> Emit Start Again?
 
       socket.emit('command', {
         type: 'TIMED_LOOP_START',
@@ -260,27 +258,27 @@ function App() {
         text: timedLoopText
       });
 
-      // Reset countdown
+      // RESTART THE TIMER (Loop)
+      // Calculate original duration from current input (or saved state)
       const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
-      setCountdownRemaining(totalSeconds);
+      socket.emit('timer_action', { action: 'start', duration: totalSeconds });
     }
   }, [countdownRemaining, isTimedLoopRunning, dialogCoords, timedLoopText, timerHours, timerMinutes, timerSeconds, socket]);
 
-  // Timer Countdown Logic
+  // Synced Timer Logic
   useEffect(() => {
     let interval = null;
-    if (isTimedLoopRunning) {
+    if (isTimedLoopRunning && endTime > 0) {
       interval = setInterval(() => {
-        setCountdownRemaining(prev => {
-          if (prev <= 0) return 0;
-          return prev - 1;
-        });
-      }, 1000);
+        const now = Date.now();
+        const diff = Math.ceil((endTime - now) / 1000);
+        setCountdownRemaining(diff);
+      }, 500); // Check every 500ms
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isTimedLoopRunning]);
+  }, [isTimedLoopRunning, endTime]);
 
   // CLOUD SYNC LOGIC
   // 1. Load Data on Auth
@@ -420,27 +418,6 @@ function App() {
       socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
     }
   }, [dpiScale, connected]);
-
-  // Sync Text/Timer Settings to peers
-  useEffect(() => {
-    if (!socket || !connected) return;
-    if (isRemoteUpdate.current) {
-      isRemoteUpdate.current = false;
-      return;
-    }
-
-    // Debounce to prevent flooding
-    const timer = setTimeout(() => {
-      socket.emit('sync_state', {
-        type: 'text_update',
-        timedLoopText,
-        timerHours,
-        timerMinutes,
-        timerSeconds
-      });
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [timedLoopText, timerHours, timerMinutes, timerSeconds, socket, connected]);
   // Calculate logical coordinates from click on image
   // Calculate logical coordinates from click on image
   const getLogicalCoords = (e) => {
@@ -556,12 +533,6 @@ function App() {
       x: dialogCoords.x,
       y: dialogCoords.y,
       text: timedLoopText
-    });
-
-    // Broadcast Timer Start to other clients
-    socket.emit('sync_state', {
-      type: 'timer_start',
-      duration: totalSeconds
     });
 
     addLog('System', `Starting Timed Loop: ${totalSeconds}s, Text: ${timedLoopText ? 'Yes' : 'No'}`);
@@ -1104,12 +1075,16 @@ function App() {
 
                   {/* Text Input */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400 font-medium">Auto-paste Text (Optional)</label>
+                    <label className="text-xs text-slate-400 font-medium">Auto-paste Text (Optional) - Live Sync</label>
                     <input
                       type="text"
                       value={timedLoopText}
-                      onChange={(e) => setTimedLoopText(e.target.value)}
-                      placeholder="Text to paste initially..."
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTimedLoopText(val); // Optimistic update
+                        socket.emit('update_text', val);
+                      }}
+                      placeholder="Text to paste initially... (Syncs across devices)"
                       className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none placeholder-slate-600"
                     />
                   </div>
@@ -1117,39 +1092,33 @@ function App() {
                   {/* Countdown Display if Running */}
                   {isTimedLoopRunning && (
                     <div className="text-center py-2 bg-black/30 rounded-lg border border-slate-700/50">
-                      <span className="text-xs text-slate-500 block mb-1">Time Remaining</span>
+                      <span className="text-xs text-slate-500 block mb-1">Time Remaining (Synced)</span>
                       <span className="text-xl font-mono font-bold text-cyan-400">
                         {new Date(countdownRemaining * 1000).toISOString().substr(11, 8)}
                       </span>
                     </div>
                   )}
 
-                  {isTimedLoopRunning ? (
-                    <button
-                      onClick={() => {
-                        setIsTimedLoopRunning(false);
-                        if (socket) socket.emit('sync_state', { type: 'timer_stop' });
-                        addLog('System', 'Timed loop stopped manually');
-                      }}
-                      className="w-full py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold text-white shadow-lg transition-colors"
-                    >
-                      ⏹ Stop Timed Loop
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleStartTimedLoop}
-                      disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
-                      className={`w-full py-3 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
-                        ? 'bg-amber-600 text-white animate-pulse'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
-                        } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
-                    >
-                      ▶ Start Timed Loop
-                    </button>
-                  )}
+                  {/* Start Button */}
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (!socket || !dialogCoords) return;
+                      const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
+                      socket.emit('timer_action', { action: 'start', duration: totalSeconds });
+                    }}
+                    disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
+                    className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
+                      ? 'bg-amber-600 text-white animate-pulse'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
+                      } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
+                  >
+                    {isTimedLoopRunning ? 'Running (Wait for Restart)' : '▶ Start Timed Loop'}
+                  </button>
+
                   {isTimedLoopRunning && (
                     <button
-                      onClick={() => socket.emit('command', { type: 'STOP_LOOP' })}
+                      onClick={() => socket.emit('timer_action', { action: 'stop' })}
                       className="w-full py-1 text-xs text-red-400 hover:text-red-300 underline"
                     >
                       Force Stop
