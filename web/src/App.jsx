@@ -121,7 +121,12 @@ function App() {
     }
 
     // Add headers to skip browser warnings (Ngrok & LocalTunnel)
+    const savedToken = localStorage.getItem('anti_online_access_token');
     const newSocket = io(serverUrl, {
+      auth: {
+        token: savedToken,
+        role: 'viewer'
+      },
       transports: ['websocket'], // Force WebSocket to avoid CORS preflight (OPTIONS) issues with LocalTunnel
       extraHeaders: {
         "ngrok-skip-browser-warning": "true",
@@ -400,6 +405,10 @@ function App() {
             setIsAuthenticated(true);
             // Cache it now
             localStorage.setItem('anti_online_access_token', accessCode);
+            if (socket) {
+              socket.auth = { token: accessCode, role: 'viewer' };
+              socket.disconnect().connect();
+            }
             addLog('System', 'Offline login successful (cloud verified)');
           } else {
             alert('Cannot verify password offline, or password incorrect.');
