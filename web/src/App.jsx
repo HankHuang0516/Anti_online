@@ -174,6 +174,7 @@ function App() {
 
     socket.on('screen_update', (data) => {
       setScreenImage(`data:image/jpeg;base64,${data.image}`);
+      setIsHostConnected(true); // Robustness: If we see screen, Host is definitely online
     });
 
     socket.on('auth_result', (data) => {
