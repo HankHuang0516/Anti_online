@@ -85,6 +85,9 @@ const startPythonAgent = () => {
                     }
                 } else if (msg.type === 'log') {
                     console.log("[PY]", msg.message);
+                    if (isConnected) {
+                        socket.emit("log", { message: msg.message });
+                    }
                 }
             } catch (e) {
                 // Should not happen often with valid buffering, but good to catch

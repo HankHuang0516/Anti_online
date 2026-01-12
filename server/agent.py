@@ -4,29 +4,116 @@ import time
 import base64
 import threading
 import io
+import os
 import mss
 import pyautogui
 from PIL import Image
 
-# Configuration
-FPS = 15              # Increased from 5 to 15 for smoother video
-JPEG_QUALITY = 50     # Keep at 50 to save bandwidth
-TARGET_WIDTH = 1024   # Resolution constraint
+# Try to import OpenCV and NumPy for image matching
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+    sys.stderr.write("Warning: OpenCV/NumPy not found. Image matching features (Auto Accept, Retry) will be disabled.\n")
 
-# PyAutoGUI Safety
-pyautogui.FAILSAFE = False
+# Configuration
+FPS = 15
+JPEG_QUALITY = 50
+TARGET_WIDTH = 1024
 
 # Globals for Offset & State
+OFFSET_X = 0
 OFFSET_Y = 0
 SCALE_X = 1.0
 SCALE_Y = 1.0
 CURRENT_MONITOR_INDEX = 1
 MONITOR_CHANGE_PENDING = False
 
+# Auto Accept State
+AUTO_ACCEPT_RUNNING = False
+AUTO_ACCEPT_THREAD = None
+
 # Force UTF-8 for stdin/stdout to handle Chinese characters correctly
 if sys.platform == 'win32':
     sys.stdin.reconfigure(encoding='utf-8')
     sys.stdout.reconfigure(encoding='utf-8')
+
+# Helper: Find Template on Screen
+def find_template(template_name, threshold=0.85):
+    if not HAS_CV2:
+        return None
+        
+    try:
+        # Construct absolute path to assets
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        template_path = os.path.join(base_path, 'assets', template_name)
+        
+        if not os.path.exists(template_path):
+            sys.stderr.write(f"Template not found: {template_path}\n")
+            return None
+
+        # Load template
+        template = cv2.imread(template_path)
+        if template is None:
+            return None
+            
+        with mss.mss() as sct:
+            # Capture current monitor
+            monitor = sct.monitors[CURRENT_MONITOR_INDEX] if CURRENT_MONITOR_INDEX < len(sct.monitors) else sct.monitors[1]
+            sct_img = sct.grab(monitor)
+            screen_img = np.array(sct_img)
+            
+            # Convert BGRA (mss) to BGR (cv2)
+            screen_img = cv2.cvtColor(screen_img, cv2.COLOR_BGRA2BGR)
+            
+            # Match
+            result = cv2.matchTemplate(screen_img, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            if max_val >= threshold:
+                # Calculate center
+                h, w = template.shape[:2]
+                center_x = max_loc[0] + w // 2
+                center_y = max_loc[1] + h // 2
+                
+                # Apply monitor offset to get absolute coordinates
+                abs_x = center_x + monitor['left']
+                abs_y = center_y + monitor['top']
+                
+                return (abs_x, abs_y, max_val)
+                
+    except Exception as e:
+        sys.stderr.write(f"Template match error: {e}\n")
+        
+    return None
+
+# Auto Accept Loop
+def auto_accept_loop():
+    global AUTO_ACCEPT_RUNNING
+    sys.stderr.write("Auto Accept Loop Started\n")
+    
+    while AUTO_ACCEPT_RUNNING:
+        try:
+            # Check for 'accept_exact_bgr.png' (Accept All)
+            match = find_template('accept_exact_bgr.png', threshold=0.92)
+            if match:
+                x, y, score = match
+                sys.stderr.write(f"Auto Accept found at ({x}, {y}) score={score:.2f}\n")
+                pyautogui.click(x=x, y=y)
+                time.sleep(1.0) # Wait to avoid double clicks
+            
+            # Sleep 3 seconds
+            for _ in range(30): 
+                if not AUTO_ACCEPT_RUNNING: break
+                time.sleep(0.1)
+                
+        except Exception as e:
+            sys.stderr.write(f"Auto Accept Error: {e}\n")
+            time.sleep(3)
+
+    sys.stderr.write("Auto Accept Loop Stopped\n")
 
 def capture_loop():
     global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, CURRENT_MONITOR_INDEX, MONITOR_CHANGE_PENDING
@@ -125,31 +212,36 @@ def input_loop():
             pass
 
 def handle_command(cmd):
-    global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, MONITOR_CHANGE_PENDING
+    global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, MONITOR_CHANGE_PENDING, AUTO_ACCEPT_RUNNING, AUTO_ACCEPT_THREAD
     
     ctype = cmd.get('type')
-    sys.stderr.write(f"Agent processing command: {ctype}\n") # DEBUG LOG
+    # sys.stderr.write(f"Agent processing command: {ctype}\n") # DEBUG LOG - Keep stderr for local debug
     
+    # Helper to send log
+    def send_log(msg):
+        print(json.dumps({"type": "log", "message": msg}))
+        sys.stdout.flush()
+
     if ctype == 'SWITCH_MONITOR':
         MONITOR_CHANGE_PENDING = True
+        send_log("Switching Monitor...")
 
     elif ctype == 'SET_MONITOR':
         idx = cmd.get('index')
         if idx is not None:
              CURRENT_MONITOR_INDEX = int(idx)
              MONITOR_CHANGE_PENDING = True
+             send_log(f"Setting Monitor to {idx}")
         
     elif ctype == 'MOUSE_CLICK':
         x = cmd.get('x')
         y = cmd.get('y')
         if x is not None and y is not None:
             # Apply Scaling + Offset
-            # Input x,y are based on the resized stream (e.g. 1024x576)
-            # We must scale them back to real resolution
             real_x = int(x * SCALE_X) + OFFSET_X
             real_y = int(y * SCALE_Y) + OFFSET_Y
-            
             pyautogui.click(x=real_x, y=real_y)
+            send_log(f"Clicked at ({x}, {y})")
             
     elif ctype == 'INPUT_TEXT':
         text = cmd.get('text')
@@ -170,11 +262,13 @@ def handle_command(cmd):
             pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.1)
             pyautogui.press('enter')
+            send_log(f"Typed text: {text}")
             
     elif ctype == 'KEY_TAP':
         key = cmd.get('key')
         if key:
             pyautogui.press(key)
+            send_log(f"Pressed key: {key}")
 
     elif ctype == 'TIMED_LOOP_START' or ctype == 'MACRO_LOOP_START':
         # One-shot execution triggering
@@ -182,6 +276,8 @@ def handle_command(cmd):
         y = cmd.get('y')
         text = cmd.get('text')
         
+        send_log("Starting Timed/Macro Loop Sequence...")
+
         if x is not None and y is not None:
              real_x = int(x * SCALE_X) + OFFSET_X
              real_y = int(y * SCALE_Y) + OFFSET_Y
@@ -194,6 +290,63 @@ def handle_command(cmd):
             pyautogui.hotkey('ctrl', 'v')
             time.sleep(0.1)
             pyautogui.press('enter')
+            send_log(f"Loop pasted text: {text}")
+            
+        # Always press Alt+Enter as per original requirement
+        time.sleep(0.5)
+        pyautogui.hotkey('alt', 'enter')
+        send_log("Pressed Alt+Enter")
+
+        # Check for Retry Button
+        time.sleep(1.0)
+        match = find_template('retry_button.png', threshold=0.85)
+        if match:
+            rx, ry, score = match
+            sys.stderr.write(f"Retry button found at ({rx}, {ry})\n")
+            pyautogui.click(x=rx, y=ry)
+            send_log("Retry button found and clicked.")
+        else:
+            send_log("Retry button not found (Success?).")
+    
+    elif ctype == 'AUTO_ACCEPT_START':
+        if not AUTO_ACCEPT_RUNNING:
+            AUTO_ACCEPT_RUNNING = True
+            AUTO_ACCEPT_THREAD = threading.Thread(target=auto_accept_loop, daemon=True)
+            AUTO_ACCEPT_THREAD.start()
+            send_log("Auto Accept Started")
+            
+    elif ctype == 'AUTO_ACCEPT_STOP':
+        AUTO_ACCEPT_RUNNING = False
+        send_log("Auto Accept Stopped")
+        
+    elif ctype == 'RESTART_TERMINAL':
+        # logic: click -> wait 1s -> ctrl+c -> wait 2s -> paste command -> wait 1s -> enter
+        x = cmd.get('x')
+        y = cmd.get('y')
+        command = cmd.get('command')
+        
+        if x is not None and y is not None and command:
+            send_log(f"Restarting Terminal with command: {command}")
+            real_x = int(x * SCALE_X) + OFFSET_X
+            real_y = int(y * SCALE_Y) + OFFSET_Y
+            
+            # 1. Click Terminal
+            pyautogui.click(x=real_x, y=real_y)
+            time.sleep(1.0)
+            
+            # 2. Ctrl+C
+            pyautogui.hotkey('ctrl', 'c')
+            time.sleep(2.0)
+            
+            # 3. Paste Command
+            copy_to_clipboard(command)
+            time.sleep(0.1)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(1.0)
+            
+            # 4. Enter
+            pyautogui.press('enter')
+            send_log("Terminal restart sequence completed.")
 
 def copy_to_clipboard(text):
     """
