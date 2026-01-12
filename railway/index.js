@@ -168,13 +168,13 @@ io.on('connection', (socket) => {
     // 3. Handle Updates
     socket.on('update_text', (text) => {
         sharedState.timedLoopText = text;
-        // Broadcast to all including sender (simple consistency)
-        io.emit('text_updated', { text });
+        // Broadcast to others ONLY (avoid echo back to sender which disrupts typing)
+        socket.broadcast.emit('text_updated', { text });
     });
 
     socket.on('update_enabled', (enabled) => {
         sharedState.timedLoopEnabled = enabled;
-        io.emit('enabled_updated', { enabled });
+        socket.broadcast.emit('enabled_updated', { enabled });
     });
 
     socket.on('timer_action', (data) => {
