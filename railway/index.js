@@ -106,6 +106,7 @@ app.get('/', (req, res) => {
 // In-Memory Shared State
 let sharedState = {
     timedLoopText: '',
+    timedLoopEnabled: false,
     timer: {
         running: false,
         endTime: 0,
@@ -136,6 +137,11 @@ io.on('connection', (socket) => {
         sharedState.timedLoopText = text;
         // Broadcast to all including sender (simple consistency)
         io.emit('text_updated', { text });
+    });
+
+    socket.on('update_enabled', (enabled) => {
+        sharedState.timedLoopEnabled = enabled;
+        io.emit('enabled_updated', { enabled });
     });
 
     socket.on('timer_action', (data) => {

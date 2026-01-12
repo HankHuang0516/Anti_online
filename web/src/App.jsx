@@ -64,7 +64,7 @@ function App() {
   const [timerMinutes, setTimerMinutes] = useState(5);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timedLoopText, setTimedLoopText] = useState('');
-  const [countdownRemaining, setCountdownRemaining] = useState(0);
+  const [countdownRemaining, setCountdownRemaining] = useState(null);
   const [isTimedLoopRunning, setIsTimedLoopRunning] = useState(false);
   const isRestartingRef = useRef(false); // Flag to ignore STOPPED event during restart
 
@@ -203,10 +203,14 @@ function App() {
 
     // --- REAL TEME SYNC LISTENERS ---
     socket.on('state_sync', (state) => {
-      if (state.timedLoopText) setTimedLoopText(state.timedLoopText);
+      if (state.timedLoopText !== undefined) setTimedLoopText(state.timedLoopText);
+      if (state.timedLoopEnabled !== undefined) setTimedLoopEnabled(state.timedLoopEnabled);
       if (state.timer.running) {
         setIsTimedLoopRunning(true);
         setEndTime(state.timer.endTime);
+        const now = Date.now();
+        const diff = Math.ceil((state.timer.endTime - now) / 1000);
+        setCountdownRemaining(diff > 0 ? diff : 0);
       } else {
         setIsTimedLoopRunning(false);
         setCountdownRemaining(0);
@@ -217,13 +221,17 @@ function App() {
       setTimedLoopText(data.text);
     });
 
+    socket.on('enabled_updated', (data) => {
+      setTimedLoopEnabled(data.enabled);
+    });
+
     socket.on('timer_updated', (timer) => {
       if (timer.running) {
         setIsTimedLoopRunning(true);
         setEndTime(timer.endTime);
-        // Also restore duration to inputs if needed? (User preference)
-        // setTimerSeconds(timer.originalDuration % 60);
-        // etc... maybe skip to avoid overwriting user input
+        const now = Date.now();
+        const diff = Math.ceil((timer.endTime - now) / 1000);
+        setCountdownRemaining(diff > 0 ? diff : 0);
       } else {
         setIsTimedLoopRunning(false);
         setCountdownRemaining(0);
@@ -239,13 +247,14 @@ function App() {
       socket.off('error');
       socket.off('state_sync');
       socket.off('text_updated');
+      socket.off('enabled_updated');
       socket.off('timer_updated');
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
 
   // Frontend-driven Timed Loop Restart Logic
   useEffect(() => {
-    if (isTimedLoopRunning && countdownRemaining <= 0) {
+    if (isTimedLoopRunning && countdownRemaining !== null && countdownRemaining <= 0) {
       // Only trigger if we are "close" to zero (within 1s) to avoid double firing on old state
       // Actually, simplified: If it hits zero, WE EMIT THE COMMAND.
       // The server doesn't auto-stop. We stay "Running".
@@ -1029,7 +1038,11 @@ function App() {
                   <input
                     type="checkbox"
                     checked={timedLoopEnabled}
-                    onChange={(e) => setTimedLoopEnabled(e.target.checked)}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setTimedLoopEnabled(val);
+                      socket.emit('update_enabled', val);
+                    }}
                     className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-offset-0 focus:ring-0 cursor-pointer"
                   />
                 </div>

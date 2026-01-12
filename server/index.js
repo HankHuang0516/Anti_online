@@ -1,125 +1,140 @@
 require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const automation = require('./automation');
+const { io } = require("socket.io-client");
+const { spawn } = require('child_process');
 
-const app = express();
-const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://hankhuang0516.github.io"
-];
+// Config
+const RAILWAY_URL = "https://antionline-production.up.railway.app";
+const ACCESS_CODE = process.env.ACCESS_CODE || "1234";
 
-app.use(cors({
-    origin: allowedOrigins,
-    credentials: true
-}));
-app.use(express.json());
+console.log("Starting Anti-Online Local Agent (Python Bridge Mode)...");
+console.log(`Connecting to Cloud Relay: ${RAILWAY_URL}`);
 
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: {
-        origin: allowedOrigins,
-        methods: ["GET", "POST"],
-        credentials: true
-    }
+// Connect to Railway Relay
+const socket = io(RAILWAY_URL, {
+    auth: {
+        token: ACCESS_CODE,
+        role: "host"
+    },
+    reconnectionDelayMax: 10000,
 });
 
-const PORT = 3001;
+let isConnected = false;
+let pyProcess = null;
 
-// Basic health check
-app.get('/', (req, res) => {
-    res.send('Anti Online Server is Running');
-});
+// --- PYTHON BRIDGE SETUP ---
+let buffer = ''; // Buffer for incoming data
 
-io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
-    socket.authenticated = false;
-
-    // Authenticate via handshake if provided
-    if (socket.handshake.auth && socket.handshake.auth.token === process.env.ACCESS_CODE) {
-        socket.authenticated = true;
-        socket.emit('auth_result', { success: true });
-        console.log(`Client ${socket.id} authenticated via handshake`);
-    }
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+const startPythonAgent = () => {
+    console.log("Parsing Python Agent...");
+    // Use 'python' or 'python3' depending on environment. Assuming 'python' works as per verification.
+    pyProcess = spawn('python', ['-u', 'agent.py'], {
+        stdio: ['pipe', 'pipe', 'inherit'], // pipe stdin/stdout, inherit stderr for logs
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
     });
 
-    // Handle commands from Web Client
-    socket.on('command', async (data) => {
-        // Handle AUTH command separately
-        if (data.type === 'AUTH') {
-            const expectedCode = process.env.ACCESS_CODE;
-            if (data.code === expectedCode) {
-                socket.authenticated = true;
-                socket.emit('auth_result', { success: true });
-                console.log(`Client ${socket.id} authenticated successfully`);
-            } else {
-                socket.emit('auth_result', { success: false, message: 'Invalid code' });
-                console.log(`Client ${socket.id} failed authentication`);
-            }
-            return;
-        }
-
-        // Require authentication for all other commands
-        if (!socket.authenticated) {
-            console.log(`Unauthenticated command rejected from ${socket.id}`);
-            socket.emit('error', { message: 'Authentication required' });
-            return;
-        }
-
-        console.log('Received command:', data);
+    // Restore Settings from Cloud
+    (async () => {
         try {
-            if (data.type === 'START_AGENT') {
-                await automation.startAgent();
-                socket.emit('log', { message: 'Agent start command sent.' });
-            } else if (data.type === 'MACRO_LOOP_START') {
-                automation.startMacroLoop(data.x, data.y);
-                socket.emit('log', { message: `Macro Loop started at (${data.x}, ${data.y})` });
-            } else if (data.type === 'INPUT_TEXT') {
-                await automation.typeText(data.text, data.dialogX, data.dialogY);
-                socket.emit('log', { message: `Typed: ${data.text}` });
-            } else if (data.type === 'KEY_PRESS') {
-                await automation.pressKey(data.key);
-                socket.emit('log', { message: `Pressed: ${data.key}` });
-            } else if (data.type === 'STOP_LOOP') {
-                automation.stopInputLoop();
-                socket.emit('log', { message: 'Loop stop requested' });
-            } else if (data.type === 'RESTART_TERMINAL') {
-                await automation.restartTerminal(data.x, data.y, data.command || 'npm start');
-                socket.emit('log', { message: `Restarted terminal at (${data.x}, ${data.y})` });
-            } else if (data.type === 'MOUSE_CLICK') {
-                await automation.mouseClick(data.x, data.y);
-            } else if (data.type === 'MOUSE_MOVE') {
-                await automation.mouseMove(data.x, data.y);
-            } else if (data.type === 'AUTO_ACCEPT_START') {
-                automation.startAutoAccept();
-                socket.emit('log', { message: 'Auto Accept started' });
-            } else if (data.type === 'AUTO_ACCEPT_STOP') {
-                automation.stopAutoAccept();
-                socket.emit('log', { message: 'Auto Accept stopped' });
-            } else if (data.type === 'SET_SCREEN_OFFSET') {
-                automation.setScreenOffset(data.x, data.y, data.width || 0, data.height || 0);
-            } else if (data.type === 'SET_DPI_SCALE') {
-                automation.setDpiScale(data.scale);
-            } else if (data.type === 'TIMED_LOOP_START') {
-                automation.runTimedLoop(data.x, data.y, data.text);
-                socket.emit('log', { message: `Timed loop started at (${data.x}, ${data.y})` });
+            console.log("Fetching configuration from cloud...");
+            const res = await fetch(`${RAILWAY_URL}/data`, {
+                headers: { 'x-access-code': ACCESS_CODE }
+            });
+            const userData = await res.json();
+
+            if (userData && pyProcess && pyProcess.stdin) {
+                console.log("Restoring cloud settings:", userData);
+
+                // 1. Restore Monitor
+                if (userData.currentScreen !== undefined) {
+                    console.log(`Restoring Monitor: ${userData.currentScreen}`);
+                    pyProcess.stdin.write(JSON.stringify({
+                        type: 'SET_MONITOR',
+                        index: userData.currentScreen
+                    }) + "\n");
+                }
+
+                // 2. Restore Offsets/Scale (Optional, if agent supports it or just for logging)
+                // Agent stores OFFSET_X/Y globally, we can update them via internal command if needed
+                // Currently agent calculates them dynamically based on Monitor.
+                // But we can trigger a 'switch' to force update.
             }
-        } catch (error) {
-            console.error('Command error:', error);
-            socket.emit('error', { message: error.message });
+        } catch (e) {
+            console.error("Failed to fetch cloud settings:", e);
         }
+    })();
+
+    pyProcess.stdout.on('data', (data) => {
+        buffer += data.toString();
+
+        // Split by newline
+        const lines = buffer.split('\n');
+
+        // The last element is either empty (if ended with \n) or an incomplete chunk
+        buffer = lines.pop();
+
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            try {
+                const msg = JSON.parse(line);
+                if (msg.type === 'screen') {
+                    if (isConnected) {
+                        socket.emit("screen_update", {
+                            image: msg.data,
+                            timestamp: Date.now()
+                        });
+                    }
+                } else if (msg.type === 'log') {
+                    console.log("[PY]", msg.message);
+                }
+            } catch (e) {
+                // Should not happen often with valid buffering, but good to catch
+                // console.error("Parse error:", e); 
+            }
+        });
     });
+
+    pyProcess.on('close', (code) => {
+        console.log(`Python agent exited with code ${code}`);
+        // Restart?
+        setTimeout(startPythonAgent, 5000);
+    });
+};
+
+startPythonAgent();
+
+// --- SOCKET EVENTS ---
+
+socket.on("connect", () => {
+    console.log(`Connected to Railway! Socket ID: ${socket.id}`);
+    isConnected = true;
 });
 
-// Start automation listener (if needed)
-automation.init(io);
-
-server.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+socket.on("disconnect", () => {
+    console.log("Disconnected from Railway. Reconnecting...");
+    isConnected = false;
 });
+
+socket.on("auth_result", (data) => {
+    if (data.success) {
+        console.log("Authentication Successful. Host Mode Active.");
+    } else {
+        console.error("Authentication Failed!", data.message);
+    }
+});
+
+// --- COMMAND RELAY ---
+socket.on("command", (data) => {
+    console.log("Received remote command:", JSON.stringify(data)); // DEBUG LOG
+    if (pyProcess && pyProcess.stdin) {
+        // Forward to Python
+        try {
+            pyProcess.stdin.write(JSON.stringify(data) + "\n");
+        } catch (e) {
+            console.error("Failed to write to python stdin", e);
+        }
+    } else {
+        console.error("Python process not ready/stdin closed");
+    }
+});
+
+console.log("Agent running. Press Ctrl+C to stop.");
