@@ -625,7 +625,7 @@ function App() {
   };
 
   const SettingsModal = () => (
-    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-[100] flex flex-col overflow-hidden">
 
       {/* --- Calibration Overlay (Full Screen) --- */}
       {isSettingAnything && (

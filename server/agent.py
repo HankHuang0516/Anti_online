@@ -28,8 +28,11 @@ OFFSET_X = 0
 OFFSET_Y = 0
 SCALE_X = 1.0
 SCALE_Y = 1.0
+DPI_SCALE = 1.0 # Added DPI Scale
 CURRENT_MONITOR_INDEX = 1
 MONITOR_CHANGE_PENDING = False
+
+
 
 # Auto Accept State
 AUTO_ACCEPT_RUNNING = False
@@ -318,6 +321,15 @@ def handle_command(cmd):
     elif ctype == 'AUTO_ACCEPT_STOP':
         AUTO_ACCEPT_RUNNING = False
         send_log("Auto Accept Stopped")
+
+    elif ctype == 'SET_DPI_SCALE':
+        scale = cmd.get('scale', 1.0)
+        DPI_SCALE = float(scale)
+        send_log(f"DPI Scale set to {DPI_SCALE}")
+
+    elif ctype == 'STOP_LOOP':
+        # Python agent handles one-shot tasks, so stop is mostly for logic reset or logging
+        send_log("Received STOP_LOOP command")
         
     elif ctype == 'RESTART_TERMINAL':
         # logic: click -> wait 1s -> ctrl+c -> wait 2s -> paste command -> wait 1s -> enter
