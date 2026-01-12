@@ -151,6 +151,12 @@ io.on('connection', (socket) => {
             io.to('host').emit('command', data);
         });
 
+        // Real-time Sync between Viewers (Text, Timer, etc.)
+        socket.on('sync_state', (data) => {
+            // Broadcast to all other viewers (excluding sender)
+            socket.broadcast.to('viewer').emit('state_sync', data);
+        });
+
         socket.on('disconnect', () => {
             console.log('VIEWER disconnected');
         });
