@@ -39,7 +39,9 @@ function App() {
   const [isSynced, setIsSynced] = useState(true); // Indicator for cloud sync status
 
   // Ref to keep track of latest accessCode without re-triggering socket effect
-  const accessCodeRef = useRef(accessCode);
+  const accessCodeRef = useRef(accessCode); // For usage in closures
+  const isRemoteUpdate = useRef(false); // For breaking sync loops
+
   useEffect(() => {
     accessCodeRef.current = accessCode;
   }, [accessCode]);
@@ -159,6 +161,26 @@ function App() {
         if (match && match[1]) {
           setCurrentScreen(parseInt(match[1]));
         }
+      }
+    });
+
+    socket.on('state_sync', (data) => {
+      // Receive updates from other clients
+      isRemoteUpdate.current = true; // Flag to prevent re-emission
+      if (data.type === 'text_update') {
+        if (data.timedLoopText !== undefined) setTimedLoopText(data.timedLoopText);
+        if (data.timerHours !== undefined) setTimerHours(data.timerHours);
+        if (data.timerMinutes !== undefined) setTimerMinutes(data.timerMinutes);
+        if (data.timerSeconds !== undefined) setTimerSeconds(data.timerSeconds);
+      } else if (data.type === 'timer_start') {
+        // Sync Timer Start
+        setIsTimedLoopRunning(true);
+        setCountdownRemaining(data.duration);
+        addLog('System', 'Timer started by remote user');
+      } else if (data.type === 'timer_stop') {
+        setIsTimedLoopRunning(false);
+        setCountdownRemaining(0);
+        addLog('System', 'Timer stopped by remote user');
       }
     });
 
@@ -398,6 +420,27 @@ function App() {
       socket.emit('command', { type: 'SET_DPI_SCALE', scale: dpiScale });
     }
   }, [dpiScale, connected]);
+
+  // Sync Text/Timer Settings to peers
+  useEffect(() => {
+    if (!socket || !connected) return;
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
+      return;
+    }
+
+    // Debounce to prevent flooding
+    const timer = setTimeout(() => {
+      socket.emit('sync_state', {
+        type: 'text_update',
+        timedLoopText,
+        timerHours,
+        timerMinutes,
+        timerSeconds
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [timedLoopText, timerHours, timerMinutes, timerSeconds, socket, connected]);
   // Calculate logical coordinates from click on image
   // Calculate logical coordinates from click on image
   const getLogicalCoords = (e) => {
@@ -513,6 +556,12 @@ function App() {
       x: dialogCoords.x,
       y: dialogCoords.y,
       text: timedLoopText
+    });
+
+    // Broadcast Timer Start to other clients
+    socket.emit('sync_state', {
+      type: 'timer_start',
+      duration: totalSeconds
     });
 
     addLog('System', `Starting Timed Loop: ${totalSeconds}s, Text: ${timedLoopText ? 'Yes' : 'No'}`);
@@ -1075,18 +1124,29 @@ function App() {
                     </div>
                   )}
 
-                  {/* Start Button */}
-                  <button
-                    onClick={handleStartTimedLoop}
-                    disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
-                    className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
-                      ? 'bg-amber-600 text-white animate-pulse'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
-                      } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
-                  >
-                    {isTimedLoopRunning ? 'Running (Wait for Restart)' : '▶ Start Timed Loop'}
-                  </button>
-
+                  {isTimedLoopRunning ? (
+                    <button
+                      onClick={() => {
+                        setIsTimedLoopRunning(false);
+                        if (socket) socket.emit('sync_state', { type: 'timer_stop' });
+                        addLog('System', 'Timed loop stopped manually');
+                      }}
+                      className="w-full py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold text-white shadow-lg transition-colors"
+                    >
+                      ⏹ Stop Timed Loop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartTimedLoop}
+                      disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
+                      className={`w-full py-3 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
+                        ? 'bg-amber-600 text-white animate-pulse'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
+                        } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
+                    >
+                      ▶ Start Timed Loop
+                    </button>
+                  )}
                   {isTimedLoopRunning && (
                     <button
                       onClick={() => socket.emit('command', { type: 'STOP_LOOP' })}
