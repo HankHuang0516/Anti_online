@@ -192,9 +192,19 @@ io.on('connection', (socket) => {
     if (role === 'host') {
         console.log('HOST connected');
         socket.join('host');
+        hostSocketId = socket.id;
 
         // Notify viewers that host is online
         io.to('viewer').emit('log', { message: 'Host connected' });
+
+        // Flush Command Queue
+        if (commandQueue.length > 0) {
+            console.log(`[RELAY] Flushing ${commandQueue.length} queued commands to Host`);
+            commandQueue.forEach(cmd => {
+                socket.emit('command', cmd);
+            });
+            commandQueue = [];
+        }
 
         // Relay Events from Host -> Viewers
         socket.on('screen_update', (data) => {
@@ -208,6 +218,9 @@ io.on('connection', (socket) => {
 
         socket.on('disconnect', () => {
             console.log('HOST disconnected');
+            if (hostSocketId === socket.id) {
+                hostSocketId = null;
+            }
             io.to('viewer').emit('log', { message: 'Host disconnected' });
         });
 
@@ -219,7 +232,19 @@ io.on('connection', (socket) => {
         // Relay Events from Viewer -> Host
         socket.on('command', (data) => {
             console.log(`[RELAY] Viewer sent command: ${data.type}`); // DEBUG LOG
-            io.to('host').emit('command', data);
+
+            if (hostSocketId) {
+                io.to('host').emit('command', data);
+            } else {
+                console.log(`[RELAY] Host offline. Queuing command: ${data.type}`);
+                // Add timestamp or unique ID if needed?
+                commandQueue.push(data);
+                // Limit queue size
+                if (commandQueue.length > 20) commandQueue.shift();
+
+                // Feedback to viewer?
+                socket.emit('log', { message: `[Server] Host offline. Command queued: ${data.type}` });
+            }
         });
 
         socket.on('disconnect', () => {
