@@ -29,6 +29,22 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// In-Memory Shared State (Global)
+let sharedState = {
+    timedLoopText: '',
+    timedLoopEnabled: false,
+    dialogCoords: null, // Needed for loop command
+    hostConnected: false,
+    timer: {
+        running: false,
+        endTime: 0,
+        originalDuration: 0
+    }
+};
+
+let commandQueue = []; // Queue for pending commands when Host is offline
+let hostSocketId = null; // Track active host socket
+
 // Initialize Database
 const initDB = async () => {
     try {
@@ -53,9 +69,34 @@ const initDB = async () => {
     }
 };
 
-// if (DATABASE_URL) {  <-- Removed redundant call
-//     initDB();
-// }
+// Initialize Shared State from DB
+const initSharedState = async () => {
+    if (!DATABASE_URL) return;
+    try {
+        const client = await pool.connect();
+        const result = await client.query('SELECT data FROM user_settings WHERE id = 1');
+        client.release();
+
+        const savedData = result.rows[0]?.data || {};
+        if (savedData.timedLoopText) {
+            sharedState.timedLoopText = savedData.timedLoopText;
+        }
+        if (savedData.timedLoopEnabled !== undefined) {
+            sharedState.timedLoopEnabled = savedData.timedLoopEnabled;
+        }
+        if (savedData.dialogCoords) {
+            sharedState.dialogCoords = savedData.dialogCoords;
+        }
+        // hostConnected always starts false until host joins
+        console.log("Shared State initialized from DB:", sharedState);
+    } catch (err) {
+        console.error('Error loading shared state:', err);
+    }
+};
+
+if (DATABASE_URL) {
+    initDB().then(initSharedState);
+}
 
 // REST Endpoints
 app.post('/verify', (req, res) => {
@@ -93,6 +134,12 @@ app.post('/data', async (req, res) => {
         const client = await pool.connect();
         await client.query('UPDATE user_settings SET data = $1 WHERE id = 1', [data]);
         client.release();
+
+        // Update In-Memory State immediately
+        if (data.timedLoopText !== undefined) sharedState.timedLoopText = data.timedLoopText;
+        if (data.timedLoopEnabled !== undefined) sharedState.timedLoopEnabled = data.timedLoopEnabled;
+        if (data.dialogCoords) sharedState.dialogCoords = data.dialogCoords;
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -104,48 +151,46 @@ app.get('/', (req, res) => {
     res.send('Anti Online Relay Server Running');
 });
 
+// --- SERVER-SIDE TIMED LOOP TICKER ---
+setInterval(() => {
+    if (sharedState.timer.running) {
+        const now = Date.now();
+        // Check if time passed
+        if (now >= sharedState.timer.endTime) {
+            console.log("[LOOP] Timer expired. Triggering Loop Action...");
+
+            // 1. Reset Timer FIRST (to prevent double fire)
+            sharedState.timer.endTime = now + (sharedState.timer.originalDuration * 1000);
+            io.emit('timer_updated', sharedState.timer); // Broadcast new time
+
+            // 2. Execute Action (Send Command to Host)
+            if (sharedState.dialogCoords) {
+                const command = {
+                    type: 'TIMED_LOOP_START',
+                    x: sharedState.dialogCoords.x,
+                    y: sharedState.dialogCoords.y,
+                    text: sharedState.timedLoopText
+                };
+
+                if (hostSocketId) {
+                    io.to('host').emit('command', command);
+                    io.to('viewer').emit('log', { message: `[Server] Auto-Loop Triggered` });
+                    io.emit('TIMED_LOOP_CYCLE', { timestamp: now });
+                } else {
+                    console.log("[LOOP] Host offline. Queuing command...");
+                    commandQueue.push(command);
+                    if (commandQueue.length > 20) commandQueue.shift();
+                }
+            } else {
+                console.warn("[LOOP] Cannot execute loop: Dialog Coords not set.");
+                io.to('viewer').emit('log', { source: 'Server', message: 'Loop skipped: Dialog Coords missing' });
+            }
+        }
+    }
+}, 1000); // Check every second
+
+
 // --- SOCKET.IO RELAY LOGIC ---
-
-// In-Memory Shared State
-let sharedState = {
-    timedLoopText: '',
-    timedLoopEnabled: false,
-    hostConnected: false, // New Status
-    timer: {
-        running: false,
-        endTime: 0,
-        originalDuration: 0
-    }
-};
-
-let commandQueue = []; // Queue for pending commands when Host is offline
-let hostSocketId = null; // Track active host socket
-
-// Initialize Shared State from DB
-const initSharedState = async () => {
-    if (!DATABASE_URL) return;
-    try {
-        const client = await pool.connect();
-        const result = await client.query('SELECT data FROM user_settings WHERE id = 1');
-        client.release();
-
-        const savedData = result.rows[0]?.data || {};
-        if (savedData.timedLoopText) {
-            sharedState.timedLoopText = savedData.timedLoopText;
-        }
-        if (savedData.timedLoopEnabled !== undefined) {
-            sharedState.timedLoopEnabled = savedData.timedLoopEnabled;
-        }
-        // hostConnected always starts false until host joins
-        console.log("Shared State initialized from DB:", sharedState);
-    } catch (err) {
-        console.error('Error loading shared state:', err);
-    }
-};
-
-if (DATABASE_URL) {
-    initDB().then(initSharedState);
-}
 
 io.on('connection', (socket) => {
     const auth = socket.handshake.auth || {};

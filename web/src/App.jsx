@@ -263,27 +263,8 @@ function App() {
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
 
-  // Frontend-driven Timed Loop Restart Logic
-  useEffect(() => {
-    if (isTimedLoopRunning && countdownRemaining !== null && countdownRemaining <= 0) {
-      // Only trigger if we are "close" to zero (within 1s) to avoid double firing on old state
-      // Actually, simplified: If it hits zero, WE EMIT THE COMMAND.
-      // The server doesn't auto-stop. We stay "Running".
-      // We emit command -> Wait -> Emit Start Again?
-
-      socket.emit('command', {
-        type: 'TIMED_LOOP_START',
-        x: dialogCoords?.x,
-        y: dialogCoords?.y,
-        text: timedLoopText
-      });
-
-      // RESTART THE TIMER (Loop)
-      // Calculate original duration from current input (or saved state)
-      const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
-      socket.emit('timer_action', { action: 'start', duration: totalSeconds });
-    }
-  }, [countdownRemaining, isTimedLoopRunning, dialogCoords, timedLoopText, timerHours, timerMinutes, timerSeconds, socket]);
+  // Frontend-driven Timed Loop Restart Logic REMOVED -> Moved to Server (Railway)
+  // This ensures the loop continues even if the browser is closed.
 
   // Synced Timer Logic
   useEffect(() => {
