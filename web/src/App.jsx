@@ -56,6 +56,7 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState(savedSettings?.currentScreen || 0);
   const logEndRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [isHostConnected, setIsHostConnected] = useState(false); // Relay <-> Host connection
 
   // Timed Loop State
   const [endTime, setEndTime] = useState(0);
@@ -155,12 +156,13 @@ function App() {
 
     socket.on('disconnect', () => {
       setConnected(false);
+      setIsHostConnected(false);
       // setIsAuthenticated(false); // Keep persistence
       addLog('System', 'Disconnected from server');
     });
 
     socket.on('log', (data) => {
-      addLog('Server', data.message);
+      addLog(data.source || 'Server', data.message);
       // Sync Monitor State from Server Logs
       if (data.message && data.message.includes('Switched to Monitor')) {
         const match = data.message.match(/Switched to Monitor (\d+)/);
@@ -177,6 +179,7 @@ function App() {
     socket.on('auth_result', (data) => {
       if (data.success) {
         setIsAuthenticated(true);
+        // Load initial settings?
         // Cache the successful token using Ref to get latest value
         localStorage.setItem('anti_online_access_token', accessCodeRef.current);
 
@@ -893,20 +896,31 @@ function App() {
 
       <div className="max-w-6xl mx-auto space-y-4 lg:space-y-6">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-700 pb-4">
-          <h1 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-            Anti Online
-          </h1>
-          <div className="flex items-center gap-3">
-            {/* Sync Indicator */}
-            {isAuthenticated && (
-              <div title={isSynced ? "Settings synced to cloud" : "Syncing..."} className="text-xs">
-                {isSynced ? '☁️ Synced' : '🔄 Syncing...'}
+        <header className="bg-slate-900/50 backdrop-blur-md border-b border-slate-700/50 p-4 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <span className="text-xl font-bold text-white">A</span>
               </div>
-            )}
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs lg:text-sm font-medium ${connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
-              <span className="hidden sm:inline">{connected ? 'Connected' : 'Disconnected'}</span>
+              <div>
+                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                  Anti Online
+                </h1>
+                <div className="flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+                    <span className={connected ? 'text-green-400' : 'text-red-400'}>
+                      {connected ? 'Relay Connected' : 'Relay Offline'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${isHostConnected ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-slate-600'}`} />
+                    <span className={isHostConnected ? 'text-blue-400' : 'text-slate-500'}>
+                      {isHostConnected ? 'Host Online' : 'Host Offline'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
             <button
               onClick={() => setShowSettings(true)}

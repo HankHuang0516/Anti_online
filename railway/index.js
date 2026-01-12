@@ -107,6 +107,7 @@ app.get('/', (req, res) => {
 let sharedState = {
     timedLoopText: '',
     timedLoopEnabled: false,
+    hostConnected: false, // New Status
     timer: {
         running: false,
         endTime: 0,
@@ -132,6 +133,7 @@ const initSharedState = async () => {
         if (savedData.timedLoopEnabled !== undefined) {
             sharedState.timedLoopEnabled = savedData.timedLoopEnabled;
         }
+        // hostConnected always starts false until host joins
         console.log("Shared State initialized from DB:", sharedState);
     } catch (err) {
         console.error('Error loading shared state:', err);
@@ -196,6 +198,8 @@ io.on('connection', (socket) => {
         console.log('HOST connected');
         socket.join('host');
         hostSocketId = socket.id;
+        sharedState.hostConnected = true;
+        io.emit('host_status', { connected: true });
 
         // Notify viewers that host is online
         io.to('viewer').emit('log', { message: 'Host connected' });
@@ -223,6 +227,8 @@ io.on('connection', (socket) => {
             console.log('HOST disconnected');
             if (hostSocketId === socket.id) {
                 hostSocketId = null;
+                sharedState.hostConnected = false;
+                io.emit('host_status', { connected: false });
             }
             io.to('viewer').emit('log', { message: 'Host disconnected' });
         });
