@@ -19,8 +19,8 @@ except ImportError:
     sys.stderr.write("Warning: OpenCV/NumPy not found. Image matching features (Auto Accept, Retry) will be disabled.\n")
 
 # Configuration
-FPS = 15
-JPEG_QUALITY = 50
+FPS = 5
+JPEG_QUALITY = 30
 TARGET_WIDTH = 1024
 
 # Globals for Offset & State
@@ -126,6 +126,8 @@ def auto_accept_loop():
 def capture_loop():
     global OFFSET_X, OFFSET_Y, SCALE_X, SCALE_Y, CURRENT_MONITOR_INDEX, MONITOR_CHANGE_PENDING
     
+    last_frame_hash = None # To detect duplicates
+
     # Outer Loop: Handles Re-initialization of MSS
     while True:
         try:
@@ -149,6 +151,17 @@ def capture_loop():
                         # Capture
                         sct_img = sct.grab(monitor)
                         
+                        # Optimization: Check if identical to last capture (Raw Bytes check is extremely fast)
+                        # MSS returns raw BGRA bytes. If nothing changed, these are identical.
+                        current_bytes = sct_img.bgra
+                        
+                        if last_frame_hash is not None and current_bytes == last_frame_hash:
+                            # Skip processing, nothing changed
+                            time.sleep(0.1) # Sleep a bit more to be polite to CPU
+                            continue
+                        
+                        last_frame_hash = current_bytes
+
                         # Convert to PIL Image
                         img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
                         
@@ -199,6 +212,9 @@ def capture_loop():
                         sys.stderr.write(msg + "\n")
                         print(json.dumps({"type": "log", "message": msg}))
                         sys.stdout.flush()
+                        
+                        # Reset hash on switch
+                        last_frame_hash = None
                     
                     MONITOR_CHANGE_PENDING = False
                     # Loop continues -> Re-enters 'with mss()', re-initializing it.
