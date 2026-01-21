@@ -57,6 +57,7 @@ function App() {
   const logEndRef = useRef(null);
   const [showSettings, setShowSettings] = useState(false);
   const [isHostConnected, setIsHostConnected] = useState(false); // Relay <-> Host connection
+  const [hostAllowed, setHostAllowed] = useState(false); // New: Host Connection Permission
 
   // Timed Loop State
   const [endTime, setEndTime] = useState(0);
@@ -245,6 +246,11 @@ function App() {
       setTimedLoopEnabled(data.enabled);
     });
 
+    // New: Host Allowed Status
+    socket.on('host_allowed_status', (data) => {
+      setHostAllowed(data.allowed);
+    });
+
     socket.on('timer_updated', (timer) => {
       if (timer.running) {
         setIsTimedLoopRunning(true);
@@ -269,6 +275,7 @@ function App() {
       socket.off('text_updated');
       socket.off('enabled_updated');
       socket.off('timer_updated');
+      socket.off('host_allowed_status'); // Cleanup
     };
   }, [socket, dpiScale, offsetX, offsetY, currentScreen]);
 
@@ -910,6 +917,21 @@ function App() {
                       {isHostConnected ? 'Host Online' : 'Host Offline'}
                     </span>
                   </div>
+
+                  {/* New: Host Connection Toggle */}
+                  <div className="flex items-center gap-2 border-l border-slate-700 pl-4 ml-2">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Enable Host</label>
+                    <button
+                      onClick={() => socket && socket.emit('toggle_host_connection', !hostAllowed)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 ${hostAllowed ? 'bg-green-500' : 'bg-slate-700'}`}
+                    >
+                      <span className="sr-only">Toggle Host Connection</span>
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${hostAllowed ? 'translate-x-4' : 'translate-x-0'}`}
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1132,14 +1154,30 @@ function App() {
                     onClick={(e) => {
                       e.preventDefault();
                       const totalSeconds = timerHours * 3600 + timerMinutes * 60 + timerSeconds;
-                      addLog('System', `DEBUG: Sending START command (Text: ${timedLoopText}, Timer: ${totalSeconds}s)`); // DEBUG LOG
+                      addLog('System', `Sending Local Loop Config (Interval: ${totalSeconds}s)`);
+
+                      // 1. Immediate Trigger (Optional, but good for feedback)
                       socket.emit('command', {
                         type: 'TIMED_LOOP_START',
                         x: dialogCoords?.x,
                         y: dialogCoords?.y,
                         text: timedLoopText
                       });
-                      socket.emit('timer_action', { action: 'start', duration: totalSeconds });
+
+                      // 2. Configure Local Timer A (Persistent on Host)
+                      socket.emit('command', {
+                        type: 'CONFIGURE_LOCAL_LOOP',
+                        enabled: true,
+                        interval: totalSeconds,
+                        x: dialogCoords?.x,
+                        y: dialogCoords?.y,
+                        text: timedLoopText
+                      });
+
+                      // Update Local UI State (Optimistic)
+                      setCountdownRemaining(totalSeconds);
+                      setIsTimedLoopRunning(true);
+                      isRestartingRef.current = false;
                     }}
                     disabled={!dialogCoords || (timerHours === 0 && timerMinutes === 0 && timerSeconds === 0)}
                     className={`w-full py-2 px-4 rounded-lg font-bold text-sm transition-all ${isTimedLoopRunning
@@ -1147,15 +1185,19 @@ function App() {
                       : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/20'
                       } disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none`}
                   >
-                    {isTimedLoopRunning ? 'Running (Wait for Restart)' : '▶ Start Timed Loop'}
+                    {isTimedLoopRunning ? 'Loop Running Locally' : '▶ Start Local Timed Loop'}
                   </button>
 
                   {isTimedLoopRunning && (
                     <button
-                      onClick={() => socket.emit('timer_action', { action: 'stop' })}
+                      onClick={() => {
+                        socket.emit('command', { type: 'CONFIGURE_LOCAL_LOOP', enabled: false });
+                        setIsTimedLoopRunning(false);
+                        addLog('System', 'Sent Stop Command to Local Timer');
+                      }}
                       className="w-full py-1 text-xs text-red-400 hover:text-red-300 underline"
                     >
-                      Force Stop
+                      Stop Local Loop
                     </button>
                   )}
                 </div>

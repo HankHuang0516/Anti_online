@@ -137,7 +137,6 @@ startMonitoring() [自動啟動]
 ```
 
 ### 9. Timed Loop (倒數計時循環 - 持續性背景執行)
-### 9. Timed Loop (倒數計時循環 - 持續性背景執行)
 ```
 Timed Loop 按鈕 (Frontend Web)
     │

@@ -35,11 +35,10 @@ let sharedState = {
     timedLoopEnabled: false,
     dialogCoords: null, // Needed for loop command
     hostConnected: false,
-    timer: {
-        running: false,
-        endTime: 0,
-        originalDuration: 0
-    }
+    hostAllowed: false, // Initial: Disconnected
+    hostConnected: false,
+    hostAllowed: false, // Initial: Disconnected
+    // timer: removed (moved to local agent)
 };
 
 let commandQueue = []; // Queue for pending commands when Host is offline
@@ -151,43 +150,7 @@ app.get('/', (req, res) => {
     res.send('Anti Online Relay Server Running');
 });
 
-// --- SERVER-SIDE TIMED LOOP TICKER ---
-setInterval(() => {
-    if (sharedState.timer.running) {
-        const now = Date.now();
-        // Check if time passed
-        if (now >= sharedState.timer.endTime) {
-            console.log("[LOOP] Timer expired. Triggering Loop Action...");
 
-            // 1. Reset Timer FIRST (to prevent double fire)
-            sharedState.timer.endTime = now + (sharedState.timer.originalDuration * 1000);
-            io.emit('timer_updated', sharedState.timer); // Broadcast new time
-
-            // 2. Execute Action (Send Command to Host)
-            if (sharedState.dialogCoords) {
-                const command = {
-                    type: 'TIMED_LOOP_START',
-                    x: sharedState.dialogCoords.x,
-                    y: sharedState.dialogCoords.y,
-                    text: sharedState.timedLoopText
-                };
-
-                if (hostSocketId) {
-                    io.to('host').emit('command', command);
-                    io.to('viewer').emit('log', { message: `[Server] Auto-Loop Triggered` });
-                    io.emit('TIMED_LOOP_CYCLE', { timestamp: now });
-                } else {
-                    console.log("[LOOP] Host offline. Queuing command...");
-                    commandQueue.push(command);
-                    if (commandQueue.length > 20) commandQueue.shift();
-                }
-            } else {
-                console.warn("[LOOP] Cannot execute loop: Dialog Coords not set.");
-                io.to('viewer').emit('log', { source: 'Server', message: 'Loop skipped: Dialog Coords missing' });
-            }
-        }
-    }
-}, 1000); // Check every second
 
 
 // --- SOCKET.IO RELAY LOGIC ---
@@ -222,35 +185,18 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('enabled_updated', { enabled });
     });
 
-    socket.on('timer_action', (data) => {
-        // data: { action: 'start'|'stop', duration: sec }
-        if (data.action === 'start') {
-            const now = Date.now();
-            sharedState.timer = {
-                running: true,
-                endTime: now + (data.duration * 1000),
-                originalDuration: data.duration
-            };
-        } else if (data.action === 'stop') {
-            sharedState.timer = {
-                running: false,
-                endTime: 0,
-                originalDuration: 0
-            };
-            // Propagate Stop to Host (Agent)
-            if (hostSocketId) {
-                io.to('host').emit('command', { type: 'STOP_LOOP' });
-                io.to('viewer').emit('log', { message: '[Server] Sent STOP_LOOP to Agent' });
-            } else {
-                console.log("[LOOP] Host offline. Queuing STOP_LOOP...");
-                commandQueue.push({ type: 'STOP_LOOP' });
-            }
-        }
-        io.emit('timer_updated', sharedState.timer);
-    });
+
 
     // 2. Role Assignment
     if (role === 'host') {
+        // Gating Logic: Check if Host Connection is Allowed
+        if (!sharedState.hostAllowed) {
+            console.log('Host connection rejected: Not allowed by Web');
+            socket.emit('auth_result', { success: false, message: 'Connection not enabled by Web' });
+            socket.disconnect(true);
+            return;
+        }
+
         console.log('HOST connected');
         socket.join('host');
         hostSocketId = socket.id;
@@ -279,6 +225,10 @@ io.on('connection', (socket) => {
             io.to('viewer').emit('log', data);
         });
 
+        socket.on('timer_updated', (data) => {
+            io.to('viewer').emit('timer_updated', data);
+        });
+
         socket.on('disconnect', () => {
             console.log('HOST disconnected');
             if (hostSocketId === socket.id) {
@@ -293,6 +243,30 @@ io.on('connection', (socket) => {
         // Viewer
         console.log('VIEWER connected');
         socket.join('viewer');
+
+        // Track Viewers
+        const viewers = io.sockets.adapter.rooms.get('viewer');
+        const viewerCount = viewers ? viewers.size : 0;
+        console.log(`Viewer count: ${viewerCount}`);
+
+        // Send Current Host Allowed Status
+        socket.emit('host_allowed_status', { allowed: sharedState.hostAllowed });
+
+        // Toggle Host Connection
+        socket.on('toggle_host_connection', (allowed) => {
+            console.log(`[RELAY] Viewer set hostAllowed to: ${allowed}`);
+            sharedState.hostAllowed = allowed;
+            io.emit('host_allowed_status', { allowed: sharedState.hostAllowed });
+
+            if (!allowed && hostSocketId) {
+                console.log("[RELAY] Host disabled by Web. Disconnecting Host...");
+                const hostSocket = io.sockets.sockets.get(hostSocketId);
+                if (hostSocket) {
+                    hostSocket.emit('auth_result', { success: false, message: 'Connection disabled by Web' });
+                    hostSocket.disconnect(true);
+                }
+            }
+        });
 
         // Relay Events from Viewer -> Host
         socket.on('command', (data) => {
@@ -314,6 +288,27 @@ io.on('connection', (socket) => {
 
         socket.on('disconnect', () => {
             console.log('VIEWER disconnected');
+
+            // Check remaining viewers
+            setTimeout(() => {
+                const viewers = io.sockets.adapter.rooms.get('viewer');
+                const count = viewers ? viewers.size : 0;
+                console.log(`Remaining viewers: ${count}`);
+
+                if (count === 0) {
+                    console.log("[RELAY] All viewers disconnected. Disabling Host Connection...");
+                    sharedState.hostAllowed = false; // Reset to false
+
+                    if (hostSocketId) {
+                        console.log("[RELAY] Disconnecting Host...");
+                        const hostSocket = io.sockets.sockets.get(hostSocketId);
+                        if (hostSocket) {
+                            hostSocket.emit('auth_result', { success: false, message: 'Web disconnected' });
+                            hostSocket.disconnect(true);
+                        }
+                    }
+                }
+            }, 100);
         });
     }
 });
